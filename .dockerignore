@@ -1,0 +1,11 @@
+# Keep the build context small and never ship a host venv into the image.
+.venv
+**/__pycache__/
+*.pyc
+*.pyo
+.git
+.gitignore
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+*.log

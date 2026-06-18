@@ -1,0 +1,66 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# ---- uv / virtualenv ----
+# IMPORTANT: uv.lock is NOT ignored — it is committed for reproducible builds.
+# Ignore only the local environment directory (the container env lives at
+# /opt/venv, outside the workspace; this catches a stray host `uv` run).
+.venv/
+venv/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+*.ipynb_convert*
+
+# ---- Secrets / local env ----
+.env
+.env.*
+!.env.example
+*.pem
+.netrc
+secrets.*
+
+# ---- Experiment tracking & outputs ----
+wandb/
+runs/
+outputs/
+logs/
+*.log
+checkpoints/
+mlruns/
+.tensorboard/
+
+# ---- Model weights / large binaries ----
+# Keep these out of git — push to the HF Hub, or track with Git LFS (git-lfs is
+# installed in the container) via `git lfs track "*.safetensors"`. Force-add an
+# intentional small artifact with `git add -f <file>`.
+*.safetensors
+*.bin
+*.gguf
+*.pt
+*.pth
+*.ckpt
+*.onnx
+*.h5
+*.msgpack
+
+# Local model/data directories — uncomment and adjust to your layout:
+# /models/
+# /data/
+# /datasets/
+
+# ---- OS / editor cruft ----
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+# .vscode/        # uncomment if you don't want to share local editor settings

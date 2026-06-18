@@ -1,0 +1,109 @@
+{
+  "name": "LLM Research (vLLM + CUDA)",
+  "build": {
+    "context": "..",
+    "dockerfile": "Dockerfile",
+    "args": {
+      // Pinned by digest (resolved 2026-06-17) for reproducible rebuilds.
+      "BASE_IMAGE": "nvidia/cuda:13.0.2-cudnn-devel-ubuntu24.04@sha256:e071e85c52ad91fc9ea24158ff5330876b2d1a5c4ac83ccc6066976835873c01"
+    }
+  },
+
+  // ---- GPU access -------------------------------------------------------
+  // Requires the NVIDIA Container Toolkit on the host (Linux, or Windows via
+  // WSL2 with a recent NVIDIA driver). Without a GPU the image still builds
+  // and runs; vLLM just won't be able to start an engine.
+  "runArgs": [
+    "--gpus=all",
+    // 32 GB /dev/shm for NCCL / PyTorch multiprocessing (tensor-parallel,
+    // dataloader workers). Set explicitly rather than via --ipc=host so the
+    // size is predictable on Docker Desktop / WSL2, where --ipc=host would
+    // inherit the WSL2 VM's /dev/shm. 128 GB host RAM leaves ample headroom.
+    "--shm-size=32g"
+  ],
+  "hostRequirements": {
+    "gpu": "optional"
+  },
+
+  // ---- Mounts -----------------------------------------------------------
+  // The workspace is bind-mounted automatically. The caches below are kept
+  // in named volumes so model weights, compiled CUDA kernels and build
+  // artifacts survive container rebuilds (and work cross-platform on a
+  // Windows/WSL2 host where host-path bind mounts are awkward).
+  "workspaceFolder": "/workspaces/llm-research",
+  "mounts": [
+    // HuggingFace hub cache (downloaded model weights, datasets, tokenizers).
+    "source=hf-cache,target=/home/vscode/.cache/huggingface,type=volume",
+    // NVIDIA JIT compute cache (compiled CUDA kernels / PTX).
+    "source=cuda-compute-cache,target=/home/vscode/.nv/ComputeCache,type=volume",
+    // torch.compile / inductor / extension build cache.
+    "source=torch-cache,target=/home/vscode/.cache/torch,type=volume",
+    // vLLM's own cache (compiled graphs, torch.compile artifacts).
+    "source=vllm-cache,target=/home/vscode/.cache/vllm,type=volume",
+    // uv's wheel/download cache to speed up dependency re-syncs.
+    "source=uv-cache,target=/home/vscode/.cache/uv,type=volume",
+    // pip cache (for the occasional direct pip install).
+    "source=pip-cache,target=/home/vscode/.cache/pip,type=volume"
+  ],
+
+  // ---- Environment ------------------------------------------------------
+  "containerEnv": {
+    "HF_HOME": "/home/vscode/.cache/huggingface",
+    "HUGGINGFACE_HUB_CACHE": "/home/vscode/.cache/huggingface/hub",
+    "CUDA_CACHE_PATH": "/home/vscode/.nv/ComputeCache",
+    "TORCHINDUCTOR_CACHE_DIR": "/home/vscode/.cache/torch/inductor",
+    "VLLM_CACHE_ROOT": "/home/vscode/.cache/vllm",
+    "PIP_CACHE_DIR": "/home/vscode/.cache/pip",
+    // uv: point at the baked project env + the mounted cache volume.
+    "UV_PROJECT_ENVIRONMENT": "/opt/venv",
+    "UV_CACHE_DIR": "/home/vscode/.cache/uv",
+    "UV_LINK_MODE": "copy",
+    "UV_COMPILE_BYTECODE": "1",
+    "UV_PYTHON_DOWNLOADS": "0",
+    // RTX PRO 6000 Blackwell is compute capability 12.0 (sm_120). Targets any
+    // from-source CUDA build (flash-attn, custom ops) at exactly this GPU
+    // instead of a slow all-arch sweep; +PTX keeps forward-compatible JIT.
+    // Ignored by the prebuilt wheels installed by default.
+    "TORCH_CUDA_ARCH_LIST": "12.0+PTX",
+    // Faster, more verbose hub downloads.
+    "HF_HUB_ENABLE_HF_TRANSFER": "1",
+    "PYTHONUNBUFFERED": "1",
+    // Pull HF_TOKEN from the host environment if it's set, so `huggingface-cli`
+    // and gated-model downloads work without committing a token.
+    "HF_TOKEN": "${localEnv:HF_TOKEN}",
+    "HUGGING_FACE_HUB_TOKEN": "${localEnv:HF_TOKEN}"
+  },
+
+  // vLLM's OpenAI-compatible server default port.
+  "forwardPorts": [8000],
+  "portsAttributes": {
+    "8000": { "label": "vLLM OpenAI API", "onAutoForward": "notify" }
+  },
+
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-toolsai.jupyter",
+        "charliermarsh.ruff",
+        "nvidia.nsight-vscode-edition"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/opt/venv/bin/python",
+        "python.terminal.activateEnvironment": false
+      }
+    }
+  },
+
+  // Fix ownership on the named-volume cache dirs, seed/sync the uv lockfile,
+  // and print a quick GPU/vLLM sanity check.
+  "postCreateCommand": "bash .devcontainer/post-create.sh",
+
+  "remoteUser": "vscode"
+}
