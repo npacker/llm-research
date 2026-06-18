@@ -552,7 +552,6 @@ for generation in range(10):
 - **Use Proxy Models:** Run pilot studies with 1B parameter models
 - **Early Stopping:** Monitor collapse indicators and stop if severe degradation observed
 - **Incremental Approach:** Start with 3-5 generations, extend if promising
-- **Collaboration:** Partner with institutions having larger compute resources
 
 ### Theoretical Framework
 
