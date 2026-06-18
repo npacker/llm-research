@@ -31,13 +31,26 @@ secrets.*
 
 # ---- Experiment tracking & outputs ----
 wandb/
-runs/
+runs/*
+!runs/README.md
 outputs/
 logs/
 *.log
 checkpoints/
 mlruns/
 .tensorboard/
+
+# ---- Large datasets under data/ (keep small fixtures + the README) ----
+# Version large/generated corpora on the HF Hub, not git. Force-add a small
+# intentional fixture with `git add -f <file>`.
+data/**/*.parquet
+data/**/*.arrow
+data/**/*.jsonl
+data/**/*.jsonl.gz
+data/**/*.tar
+data/**/*.tar.gz
+data/**/*.zip
+!data/README.md
 
 # ---- Model weights / large binaries ----
 # Keep these out of git — push to the HF Hub, or track with Git LFS (git-lfs is
