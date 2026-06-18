@@ -9,8 +9,9 @@ sudo mkdir -p \
   "$HOME/.cache/torch/inductor" \
   "$HOME/.cache/vllm" \
   "$HOME/.cache/uv" \
-  "$HOME/.cache/pip"
-sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache" "$HOME/.nv"
+  "$HOME/.cache/pip" \
+  "$HOME/.claude"
+sudo chown -R "$(id -u):$(id -g)" "$HOME/.cache" "$HOME/.nv" "$HOME/.claude"
 
 # Seed the lockfile resolved during the image build into the workspace so the
 # committed environment is reproducible. Only if you haven't committed one yet.

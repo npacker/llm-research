@@ -43,7 +43,10 @@
     // uv's wheel/download cache to speed up dependency re-syncs.
     "source=uv-cache,target=/home/vscode/.cache/uv,type=volume",
     // pip cache (for the occasional direct pip install).
-    "source=pip-cache,target=/home/vscode/.cache/pip,type=volume"
+    "source=pip-cache,target=/home/vscode/.cache/pip,type=volume",
+    // Claude Code credentials + settings, so a `claude` login survives a
+    // "Rebuild Container" (holds .credentials.json, settings.json, history).
+    "source=claude-config,target=/home/vscode/.claude,type=volume"
   ],
 
   // ---- Environment ------------------------------------------------------
@@ -72,6 +75,9 @@
     // and gated-model downloads work without committing a token.
     "HF_TOKEN": "${localEnv:HF_TOKEN}",
     "HUGGING_FACE_HUB_TOKEN": "${localEnv:HF_TOKEN}"
+    // Claude Code auth happens INSIDE the container (no host passthrough):
+    // run `claude`, choose "Claude Console", paste the login code once. Creds
+    // persist in the claude-config volume (~/.claude/.credentials.json).
   },
 
   // vLLM's OpenAI-compatible server default port.
@@ -82,7 +88,12 @@
 
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers/features/github-cli:1": {}
+    "ghcr.io/devcontainers/features/github-cli:1": {},
+    // Node (LTS) is the runtime Claude Code needs; the CUDA base has none.
+    "ghcr.io/devcontainers/features/node:1": {},
+    // Official Anthropic feature: installs the Claude Code CLI + VS Code
+    // extension. Auto-updates inside the container.
+    "ghcr.io/anthropics/devcontainer-features/claude-code:1.0": {}
   },
 
   "customizations": {
