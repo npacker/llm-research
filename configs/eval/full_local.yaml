@@ -1,0 +1,24 @@
+# Tier-1 capability benches that (a) have a task in lm-eval, (b) are judge-free /
+# self-contained, and (c) have a published Qwen3.5 NON-THINKING number to compare
+# against. All are trivial for the GPU at this model size; the multilingual one
+# (openai_mmlu, ~14 langs) is the runtime long pole.
+#
+# Published Qwen3.5-0.8B non-thinking targets:
+#   MMLU-Pro 29.7 | MMLU-Redux 48.5 | C-Eval 46.4 | MMMLU 34.1
+#
+# Run non-thinking to match (and to match the IFEval baseline we already validated).
+# Split execution with --tasks if you want to isolate the slow multilingual job.
+name: full_local
+
+tasks:
+  - leaderboard_mmlu_pro    # MMLU-Pro (generative CoT + answer extraction)
+  - mmlu_redux_generative   # MMLU-Redux (generative)
+  - ceval-valid             # C-Eval (Chinese, multiple-choice)
+  - openai_mmlu             # MMMLU (OpenAI multilingual MMLU, ~14 languages)
+
+num_fewshot: null
+apply_chat_template: true
+batch_size: auto
+
+model_args:
+  enable_thinking: false
