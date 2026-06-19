@@ -53,6 +53,10 @@ dependencies = [
     # sympy/antlr4). Code/agentic benches (SWE-bench, LiveCodeBench) use their own
     # separate harnesses — not covered here.
     "lm-eval[ifeval,math]",
+    # Verifier deps for the vendored IFBench task (eval_tasks/ifbench/): emoji
+    # detection + syllable counting. Pure-Python; do not affect the torch/vllm ABI.
+    "emoji",
+    "syllapy",
 ]
 
 [tool.uv]

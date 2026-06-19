@@ -77,3 +77,6 @@ Thumbs.db
 *.swp
 .idea/
 # .vscode/        # uncomment if you don't want to share local editor settings
+
+# nltk data must never be committed — routed to the HF cache volume
+.nltk_data/
