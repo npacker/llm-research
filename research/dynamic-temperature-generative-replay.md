@@ -80,6 +80,10 @@ Token-level adjustment provides finer control but may introduce instability in l
 | **Coherence Score** | LLM-as-judge rating (1-5 scale) | Higher = better quality |
 | **Task Accuracy** | If applicable (e.g., math problems) | Correctness rate |
 
+This is a generation-property study, so quality/diversity is read primarily from the
+distribution/diversity metrics (Self-BLEU, Distinct-n, plus MAUVE/Vendi); the shared
+[Capability Battery](#capability-battery-shared-eval-harness) is a secondary check here.
+
 ### Expected Challenges
 
 1. **Computational Overhead:** Token-level EDT requires entropy calculation at each step (~2-3x inference time)
@@ -189,6 +193,11 @@ Generation N: Measure collapse indicators
 
 #### Additional Metrics
 
+This is a recursive collapse study, so also run the shared
+[Capability Battery](#capability-battery-shared-eval-harness) per generation — see Area 5's
+Capability-Retention Panel (SuperGPQA per-discipline, IFBench, and the GSM8K / MMLU-Redux /
+IFEval core), tracking the IFEval−IFBench gap and SuperGPQA per-discipline variance.
+
 - **Convergence Speed:** How quickly does temperature stabilize?
 - **Optimal Switch Point:** When should exploration → exploitation transition occur?
 - **Generation Depth Limit:** How many recursive generations before collapse?
@@ -277,6 +286,10 @@ Task characteristics (precision requirements, creativity needs, structural const
 | **Instruction** | Instruction following score | Response helpfulness |
 
 #### Cross-Task Metrics
+
+Per-task scoring draws on the shared [Capability Battery](#capability-battery-shared-eval-harness):
+**SuperGPQA** (its 285 discipline tags map cleanly onto task types), **GSM8K** (math),
+**IFEval + IFBench** (instruction following), plus code benches as they are added.
 
 - **Overall Quality:** Weighted average across all tasks
 - **Fairness:** Performance variance across task types (lower = more equitable)
@@ -387,7 +400,9 @@ synergy_scores = {
 
 1. **Distribution Alignment Score:** Composite metric combining MMD, KL-divergence, and embedding similarity
 2. **Diversity Preservation:** Self-BLEU, Distinct-n, vocabulary coverage
-3. **Downstream Performance:** Train a model on synthetic data, test on real data benchmarks
+3. **Downstream Performance:** Train a model on synthetic data, then test on real data via the
+   shared [Capability Battery](#capability-battery-shared-eval-harness) (train-on-synthetic /
+   test-on-real)
 
 #### Statistical Analysis
 
@@ -531,6 +546,28 @@ for generation in range(10):
 | **Syntax Pattern Repetition** | Parse tree pattern frequency | Measures structural diversity |
 | **Error Rate** | Factual/logical errors in output | Measures quality degradation |
 
+#### Capability-Retention Panel (secondary axis)
+
+The indicators above track the **distribution/diversity axis** — they detect collapse
+directly. This panel tracks the orthogonal **capability axis**: is the model still as
+*capable* per generation, or only still *fluent*? (The Knowledge-Collapse finding —
+factual accuracy degrades while surface fluency persists — means a model can hold mainstream
+scores while collapsing.) Because collapse manifests in the **tail** (rare knowledge, novel
+behaviors) first, the sharpest detectors are **tail-probing** benchmarks. Run via the shared
+[Capability Battery](#capability-battery-shared-eval-harness), per generation vs. the Gen-0
+baseline.
+
+| Signal | Benchmark | Collapse mechanism it probes |
+|--------|-----------|------------------------------|
+| Knowledge-tail erosion | **SuperGPQA** (per-discipline) | 285 disciplines surface *which* knowledge vanishes first |
+| Generalization loss | **IFBench** | novel verifiable constraints; degrades *before* IFEval (which models overfit) |
+| Stable verifiable core | **GSM8K, MMLU-Redux, IFEval** | cheap per-generation trend line |
+| At 32B/70B scale | **MMLU-Pro, GPQA, MMMLU** | dynamic range above ~7B; MMMLU adds the multilingual tail |
+
+**Two early-warning signals** (tend to move *before* aggregate scores):
+- **IFEval − IFBench gap widening** → model is overfitting / losing generalization.
+- **SuperGPQA per-discipline variance rising** → knowledge tail collapsing unevenly.
+
 #### Prevention Effectiveness Metrics
 
 | Metric | Calculation | Target |
@@ -642,6 +679,28 @@ study with a rough single-GPU compute estimate before committing to the full-sca
 | **Model Training** | LoRA fine-tuning infrastructure | Areas 2, 5 |
 | **Evaluation Framework** | Automated benchmarking suite | All 5 areas |
 | **Data Storage** | Versioned synthetic data corpus | All 5 areas |
+
+### Capability Battery (shared eval harness)
+
+A fixed, reproducible **capability** battery — distinct from the distribution/diversity
+metrics — run per generation (Areas 2 & 5) or per condition (Areas 1, 3, 4) to track
+whether the model stays *capable*, not just *diverse*. All run locally on a single GPU via
+EleutherAI **lm-evaluation-harness**; the validated runner + configs live in the repo, with
+**SuperGPQA** and **IFBench** added as vendored custom tasks.
+
+| Tier | Tasks | Notes |
+|------|-------|-------|
+| Verifiable core | GSM8K, MMLU-Redux (generative), IFEval | faithful to published numbers; cheap per-generation canary |
+| Tail-probing | **SuperGPQA** (per-discipline), **IFBench** | sharpest collapse detectors (see Area 5) |
+| At 32B/70B scale | MMLU-Pro, GPQA, MMMLU, C-Eval | regain dynamic range above ~7B; MMMLU adds low-resource-language tail |
+| Excluded | MultiChallenge, TAU2-Bench, BFCL | need an external judge/simulator → not reproducible in an offline per-generation loop |
+
+**Conventions** (validated empirically): fix the harness/config across generations and
+compare **deltas, not absolute scores**; use **full test sets** (small-subset noise of a few
+points swamps early-generation collapse deltas); pin the **thinking/non-thinking mode** you
+deploy (scores differ markedly); prefer **generative/verifiable** scoring over
+multiple-choice-loglikelihood (the latter sits near chance for weak/collapsed models and is a
+poor regression signal).
 
 ### Publication Strategy
 
