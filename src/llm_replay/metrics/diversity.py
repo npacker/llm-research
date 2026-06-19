@@ -16,6 +16,7 @@ functions so importing this module stays cheap.
 
 from __future__ import annotations
 
+import functools
 import math
 import random
 from collections import Counter
@@ -80,16 +81,18 @@ def self_bleu(
     from sacrebleu import sentence_bleu
 
     rng = random.Random(seed)
-    if len(texts) < 2:
+    n = len(texts)
+    if n < 2:
         return 0.0
-    hyps = texts if len(texts) <= n_sample else rng.sample(texts, n_sample)
+    idx = range(n)
+    hyp_idx = idx if n <= n_sample else rng.sample(idx, n_sample)
     scores = []
-    for h in hyps:
-        pool = [t for t in texts if t is not h]
-        if not pool:
-            continue
-        refs = pool if len(pool) <= n_ref else rng.sample(pool, n_ref)
-        scores.append(sentence_bleu(h, refs).score)  # sacrebleu score is 0-100
+    for i in hyp_idx:
+        # Sample refs from the other texts; over-sample by one so that dropping the
+        # hypothesis itself (if drawn) still leaves up to n_ref references.
+        refs = [texts[j] for j in rng.sample(idx, min(n_ref + 1, n)) if j != i][:n_ref]
+        if refs:
+            scores.append(sentence_bleu(texts[i], refs).score)  # sacrebleu is 0-100
     return float(np.mean(scores)) / 100.0 if scores else 0.0
 
 
@@ -104,7 +107,15 @@ def vendi_score(embeddings: np.ndarray) -> float:
 # embeddings
 # --------------------------------------------------------------------------- #
 
-_EMBEDDER = None
+
+# Bounded cache: keep at most a couple of (model, device) embedders resident so a
+# long-lived process (notebook / sweep) that switches models doesn't accumulate
+# them in GPU memory the way an unbounded cache would.
+@functools.lru_cache(maxsize=2)
+def _load_embedder(model_name: str, device: str | None):
+    from sentence_transformers import SentenceTransformer
+
+    return SentenceTransformer(model_name, device=device)
 
 
 def embed(
@@ -113,13 +124,8 @@ def embed(
     device: str | None = None,
     batch_size: int = 64,
 ) -> np.ndarray:
-    """Unit-normalised sentence embeddings (cached model across calls)."""
-    global _EMBEDDER
-    from sentence_transformers import SentenceTransformer
-
-    if _EMBEDDER is None or _EMBEDDER[0] != model_name:
-        _EMBEDDER = (model_name, SentenceTransformer(model_name, device=device))
-    return _EMBEDDER[1].encode(
+    """Unit-normalised sentence embeddings (model cached across calls)."""
+    return _load_embedder(model_name, device).encode(
         texts,
         batch_size=batch_size,
         convert_to_numpy=True,
@@ -146,31 +152,58 @@ def unigram_kl(real: list[str], synth: list[str], eps: float = 1e-9) -> float:
     return float(kl)
 
 
-def frechet_distance(real_emb: np.ndarray, synth_emb: np.ndarray) -> float:
-    """Fréchet distance between embedding distributions (FID-style; lower = closer)."""
+def frechet_distance(
+    real_emb: np.ndarray, synth_emb: np.ndarray, eps: float = 1e-6
+) -> float:
+    """Fréchet distance between embedding distributions (FID-style; lower = closer).
+
+    Needs at least 2 samples per corpus for a covariance; returns NaN otherwise.
+    With fewer samples than the embedding dimension the covariance is rank-deficient
+    and ``sqrtm`` is unstable, so ``eps`` is added to the diagonals (standard FID
+    stabilisation) to keep the result finite — values are still biased high in that
+    regime, so compare only across runs with comparable corpus sizes.
+    """
     from scipy.linalg import sqrtm
 
+    if real_emb.shape[0] < 2 or synth_emb.shape[0] < 2:
+        return float("nan")
     mu1, mu2 = real_emb.mean(0), synth_emb.mean(0)
     c1 = np.cov(real_emb, rowvar=False)
     c2 = np.cov(synth_emb, rowvar=False)
-    covmean = sqrtm(c1 @ c2)
+    offset = eps * np.eye(c1.shape[0])
+    covmean = sqrtm((c1 + offset) @ (c2 + offset))
     if np.iscomplexobj(covmean):
         covmean = covmean.real
     return float(((mu1 - mu2) ** 2).sum() + np.trace(c1 + c2 - 2 * covmean))
 
 
 def mmd_rbf(
-    real_emb: np.ndarray, synth_emb: np.ndarray, gamma: float | None = None
+    real_emb: np.ndarray,
+    synth_emb: np.ndarray,
+    gamma: float | None = None,
+    block: int = 2048,
 ) -> float:
-    """Squared RBF-kernel MMD between embedding sets (lower = closer)."""
+    """Squared RBF-kernel MMD between embedding sets (lower = closer).
+
+    Kernel means are accumulated in row-blocks so peak memory is O(block * n)
+    rather than the O(n^2) of a full pairwise matrix — safe for large corpora.
+    """
     from sklearn.metrics.pairwise import rbf_kernel
 
     if gamma is None:
         gamma = 1.0 / real_emb.shape[1]
-    xx = rbf_kernel(real_emb, real_emb, gamma=gamma)
-    yy = rbf_kernel(synth_emb, synth_emb, gamma=gamma)
-    xy = rbf_kernel(real_emb, synth_emb, gamma=gamma)
-    return float(xx.mean() + yy.mean() - 2 * xy.mean())
+
+    def _mean_kernel(a: np.ndarray, b: np.ndarray) -> float:
+        total = 0.0
+        for i in range(0, a.shape[0], block):
+            total += rbf_kernel(a[i : i + block], b, gamma=gamma).sum()
+        return total / (a.shape[0] * b.shape[0])
+
+    return float(
+        _mean_kernel(real_emb, real_emb)
+        + _mean_kernel(synth_emb, synth_emb)
+        - 2 * _mean_kernel(real_emb, synth_emb)
+    )
 
 
 def prdc_metrics(
@@ -209,6 +242,20 @@ def mauve_score(
 # --------------------------------------------------------------------------- #
 
 
+def _mauve_device_id(device: str | None) -> int:
+    """Translate a sentence-transformers device string to a mauve device_id.
+
+    mauve uses an int: -1 for CPU, N for cuda:N. `None` (auto) maps to GPU 0, which
+    mauve itself falls back to CPU on when no CUDA is present.
+    """
+    if device is None:
+        return 0
+    d = device.lower()
+    if d.startswith("cpu"):
+        return -1
+    return int(d.split(":")[1]) if ":" in d else 0
+
+
 def compute_panel(
     synth: list[str],
     real: list[str] | None = None,
@@ -216,7 +263,6 @@ def compute_panel(
     embed_model: str = "sentence-transformers/all-MiniLM-L6-v2",
     device: str | None = None,
     with_mauve: bool = True,
-    mauve_device_id: int = 0,
 ) -> dict:
     """Full panel. Reference-based metrics are included only when `real` is given.
 
@@ -234,7 +280,7 @@ def compute_panel(
     synth_emb = embed(synth, embed_model, device)
     panel["vendi"] = vendi_score(synth_emb)
 
-    if real is not None:
+    if real:
         panel["n_real"] = len(real)
         real_emb = embed(real, embed_model, device)
         panel["unigram_kl"] = unigram_kl(real, synth)
@@ -242,6 +288,8 @@ def compute_panel(
         panel["mmd_rbf"] = mmd_rbf(real_emb, synth_emb)
         panel["prdc"] = prdc_metrics(real_emb, synth_emb)
         if with_mauve:
-            panel["mauve"] = mauve_score(real, synth, device_id=mauve_device_id)
+            panel["mauve"] = mauve_score(
+                real, synth, device_id=_mauve_device_id(device)
+            )
 
     return panel

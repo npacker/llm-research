@@ -43,6 +43,8 @@ def load_corpus(spec: str, text_field: str | None, limit: int | None) -> list[st
         from datasets import load_dataset
 
         ds = load_dataset(dataset, split=split)
+        if limit:  # slice before reading the column so we don't materialise it all
+            ds = ds.select(range(min(limit, len(ds))))
         texts = ds[field]
     else:
         path = Path(spec)
@@ -55,7 +57,7 @@ def load_corpus(spec: str, text_field: str | None, limit: int | None) -> list[st
                 if line.strip()
             ]
         else:  # .txt, one text per line
-            texts = [ln for ln in path.read_text().splitlines() if ln.strip()]
+            texts = path.read_text().splitlines()
     texts = [t for t in texts if t and t.strip()]
     return texts[:limit] if limit else texts
 
@@ -86,12 +88,28 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
+def _flatten(panel: dict, prefix: str = "") -> list[tuple[str, object]]:
+    """Flatten a (possibly nested) metric panel into (name, value) rows."""
+    rows: list[tuple[str, object]] = []
+    for k, v in panel.items():
+        name = f"{prefix}{k}"
+        if isinstance(v, dict):
+            rows.extend(_flatten(v, f"{name}."))
+        else:
+            rows.append((name, v))
+    return rows
+
+
 def main() -> None:
     args = parse_args()
     from llm_replay.metrics import diversity
 
     synth = load_corpus(args.synthetic, args.text_field, args.limit)
+    if not synth:
+        raise SystemExit(f"--synthetic {args.synthetic!r} loaded 0 usable texts")
     real = load_corpus(args.real, args.text_field, args.limit) if args.real else None
+    if args.real and not real:
+        raise SystemExit(f"--real {args.real!r} loaded 0 usable texts")
     print(
         f"[diversity] gen={args.generation} | synth={len(synth)}"
         + (f" real={len(real)}" if real else " (reference-free)")
@@ -115,14 +133,8 @@ def main() -> None:
 
     print(f"\n{'metric':18s} value")
     print("-" * 34)
-    for k, v in panel.items():
-        if isinstance(v, dict):
-            for kk, vv in v.items():
-                print(f"{k + '.' + kk:18s} {vv:.4f}")
-        elif isinstance(v, float):
-            print(f"{k:18s} {v:.4f}")
-        else:
-            print(f"{k:18s} {v}")
+    for name, v in _flatten(panel):
+        print(f"{name:18s} {v:.4f}" if isinstance(v, float) else f"{name:18s} {v}")
     print(f"\n[diversity] wrote {out_path}")
 
 
