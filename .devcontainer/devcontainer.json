@@ -68,8 +68,9 @@
     // instead of a slow all-arch sweep; +PTX keeps forward-compatible JIT.
     // Ignored by the prebuilt wheels installed by default.
     "TORCH_CUDA_ARCH_LIST": "12.0+PTX",
-    // Faster, more verbose hub downloads.
-    "HF_HUB_ENABLE_HF_TRANSFER": "1",
+    // Accelerated hub transfers via Xet (the hf_transfer path is deprecated in
+    // current huggingface_hub; HF_HUB_ENABLE_HF_TRANSFER is now a no-op).
+    "HF_XET_HIGH_PERFORMANCE": "1",
     "PYTHONUNBUFFERED": "1",
     // Pull HF_TOKEN from the host environment if it's set, so `huggingface-cli`
     // and gated-model downloads work without committing a token.

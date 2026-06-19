@@ -45,8 +45,30 @@ unpinned in `pyproject.toml` but frozen exactly by `uv.lock`.
   ```sh
   vllm serve <model-id> --host 0.0.0.0 --port 8000
   ```
+- Download model weights (optional — `vllm serve` already pulls from the hub on
+  first run; pre-download only to warm the cache or grab large/gated weights
+  ahead of time):
+  ```sh
+  hf download <repo-id>                 # e.g. Qwen/Qwen2.5-0.5B-Instruct
+  ```
+  Use `hf`, not the deprecated `huggingface-cli`. Transfers are accelerated by
+  Xet (built into this `huggingface_hub`), enabled via `HF_XET_HIGH_PERFORMANCE=1`
+  in `devcontainer.json` (the older `HF_HUB_ENABLE_HF_TRANSFER` is deprecated and
+  now a no-op). Weights land in the `hf-cache` named volume (`$HF_HOME`, ext4 on
+  the WSL2 disk, ~1.2 GB/s) — **not** the slow 9p `/workspaces` mount. Don't
+  override `HF_HOME` into the workspace.
 - Gated models: export `HF_TOKEN` on the host before opening the container; it's
   passed through automatically.
+- Check server status (once `vllm serve` is up on port 8000):
+  ```sh
+  curl -s localhost:8000/health                    # -> HTTP 200 when ready
+  curl -s localhost:8000/v1/models                 # which model is loaded
+  nvidia-smi --query-gpu=memory.used,memory.free --format=csv,noheader
+  ```
+  There is no `vllm` status subcommand — liveness is the `/health` endpoint.
+  Note: under WSL2 the GPU is shared with the Windows host, so `nvidia-smi`'s
+  `used` reflects host allocations too; trust `torch.cuda.mem_get_info()` for the
+  free VRAM actually available to a process here.
 
 ## Tuning for this machine (single RTX PRO 6000 Blackwell, 96 GB / 128 GB RAM / 8c-16t)
 

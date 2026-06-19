@@ -24,6 +24,14 @@ ABI-critical packages are hard `==` pinned and must stay coherent: **torch 2.11.
 # Serve a model — OpenAI-compatible API on forwarded port 8000:
 vllm serve <model-id> --host 0.0.0.0 --port 8000
 
+# Download weights ahead of time (optional — `vllm serve` pulls on first run).
+# Use `hf`, NOT the deprecated `huggingface-cli`. Lands in the fast hf-cache volume.
+hf download <repo-id>
+
+# Check a running server (no `vllm` status subcommand — liveness is /health):
+curl -s localhost:8000/health      # -> 200 when ready
+curl -s localhost:8000/v1/models   # which model is loaded
+
 # Lint / format (ruff is installed):
 ruff check .
 ruff format .
@@ -31,7 +39,7 @@ ruff format .
 # Jupyter kernel "Python (llm-research)" is pre-registered by post-create.sh.
 ```
 
-Gated HuggingFace models: set `HF_TOKEN` in the **host** environment before opening the container — it's passed through automatically.
+Gated HuggingFace models: set `HF_TOKEN` in the **host** environment before opening the container — it's passed through automatically. See `.devcontainer/README.md` ("Day-to-day") for download/cache-location and status-check details.
 
 ## Hardware constraints (single RTX PRO 6000 Blackwell, 96 GB)
 
