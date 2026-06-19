@@ -73,6 +73,12 @@ def parse_args() -> argparse.Namespace:
         help="Comma-separated task override (default: the config's task list)",
     )
     p.add_argument(
+        "--include-path",
+        type=Path,
+        default=None,
+        help="Directory of custom lm-eval task YAMLs to register (e.g. eval_tasks/supergpqa)",
+    )
+    p.add_argument(
         "--base-url",
         default=None,
         help="For --backend local-completions: the served /v1/completions URL",
@@ -173,6 +179,13 @@ def main() -> None:
     # Imported here so --help works without importing torch/vllm.
     import lm_eval
 
+    # Register custom task YAMLs (e.g. SuperGPQA) when an include path is given.
+    task_manager = None
+    if args.include_path:
+        from lm_eval.tasks import TaskManager
+
+        task_manager = TaskManager(include_path=str(args.include_path))
+
     model_args = build_model_args(args, cfg.get("model_args"))
     print(
         f"[evaluate] config={cfg['name']} gen={args.generation} backend={args.backend}"
@@ -189,6 +202,7 @@ def main() -> None:
         limit=args.limit,
         apply_chat_template=cfg.get("apply_chat_template", False),
         gen_kwargs=cfg.get("gen_kwargs"),
+        task_manager=task_manager,
     )
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

@@ -1,0 +1,38 @@
+# Custom lm-eval task for SuperGPQA (m-a-p/SuperGPQA) — not shipped with lm-eval.
+# ~26K graduate-level MC questions across 285 disciplines, up to 10 options each.
+# Zero-shot generative + answer-letter extraction (mirrors lm-eval's gpqa generative).
+# Published Qwen3.5-0.8B: 16.9 (non-thinking) / 21.3 (thinking). Chance ~10-25%.
+task: supergpqa
+dataset_path: m-a-p/SuperGPQA
+output_type: generate_until
+test_split: train          # dataset ships a single 'train' split
+process_docs: !function utils.process_docs
+num_fewshot: 0
+doc_to_text: "{{query}}"
+doc_to_target: "{{target}}"
+filter_list:
+  - name: flexible-extract
+    filter:
+      # Capture the answer letter (A–J) after "answer", tolerating the common
+      # formats: "The answer is (B)", "answer: B", "answer is option B",
+      # "Answer (B)". group_select: -1 takes the last such mention. Broader than
+      # a bare "(X)" match, which missed ~31% of generations.
+      - function: regex
+        regex_pattern: "(?:[Aa]nswer\\s*(?:is|:)?\\s*(?:option)?\\s*\\(?|\\()([A-Ja-j])\\)?"
+        group_select: -1
+      - function: take_first
+generation_kwargs:
+  until:
+    - "<|im_end|>"
+    - "</s>"
+  do_sample: false
+  temperature: 0.0
+  max_gen_toks: 1536
+metric_list:
+  - metric: exact_match
+    aggregation: mean
+    higher_is_better: true
+    ignore_case: true
+    ignore_punctuation: true
+metadata:
+  version: 1.0
