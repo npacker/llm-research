@@ -44,6 +44,15 @@ dependencies = [
     "openai",
     "ipython",
     "ruff",
+
+    # --- Evaluation harness (capability/regression battery) ----------------
+    # EleutherAI lm-evaluation-harness: still the 2026 gold-standard harness for
+    # reproducible capability evals (MMLU-Pro, GPQA, IFEval, MATH, BBH, MuSR via
+    # the built-in `leaderboard` task group). Has first-class vLLM backend support.
+    # Extras `ifeval`/`math` pull the verifiable-task deps (nltk/langdetect,
+    # sympy/antlr4). Code/agentic benches (SWE-bench, LiveCodeBench) use their own
+    # separate harnesses — not covered here.
+    "lm-eval[ifeval,math]",
 ]
 
 [tool.uv]

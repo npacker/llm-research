@@ -1,0 +1,24 @@
+# Cheap per-generation capability canary.
+#
+# Run this on EVERY recursive generation to detect intelligence/quality
+# regression early. All three tasks are verifiable (no LLM judge) and relatively
+# fast, so the 10-generation loop stays affordable on a single GPU.
+#
+# Consumed by scripts/evaluate.py. Compare each generation's scores against the
+# Generation-0 baseline (deltas, not absolute numbers).
+name: canary
+
+tasks:
+  - gsm8k                 # grade-school math (saturated, but a fast sanity canary)
+  - leaderboard_ifeval    # verifiable instruction following — robust, judge-free
+  - leaderboard_gpqa      # GPQA (diamond/extended/main) — small, hard, contamination-resistant
+
+# null = use each task's own default few-shot setting (keeps results comparable
+# to published numbers). Override per-run with --num-fewshot if needed.
+num_fewshot: null
+
+# Chat models: apply the tokenizer's chat template so instruction tasks behave.
+# Set false for raw base models.
+apply_chat_template: true
+
+batch_size: auto

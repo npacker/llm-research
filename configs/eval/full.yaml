@@ -1,0 +1,20 @@
+# Full capability battery — run at milestones (e.g. baseline + every Nth
+# generation), not every generation. This is the maintained successor to the
+# (retired) Open LLM Leaderboard v2: the `leaderboard` task group bundles
+# MMLU-Pro, GPQA, BBH, MuSR, MATH-hard, and IFEval — deliberately non-saturated.
+#
+# NOTE: this is heavy (several hours on a single GPU). Use configs/eval/canary.yaml
+# for the per-generation loop.
+#
+# Code/agentic benchmarks (SWE-bench, LiveCodeBench) are intentionally NOT here:
+# they require their own separate harnesses. Run those as dedicated milestone jobs.
+name: full
+
+tasks:
+  - leaderboard           # MMLU-Pro + GPQA + BBH + MuSR + MATH-hard + IFEval
+  - gsm8k                 # canary (math)
+  - truthfulqa            # truthfulness regression
+
+num_fewshot: null
+apply_chat_template: true
+batch_size: auto
