@@ -40,6 +40,26 @@ python -c "import transformers; print('transformers', transformers.__version__)"
 python -c "import vllm; print('vllm', vllm.__version__)" || echo "(vllm import failed — check GPU/driver)"
 hf version 2>/dev/null || huggingface-cli version || true
 
+echo "==> HuggingFace auth (needed for gated models/datasets, e.g. Idavidrein/gpqa):"
+# devcontainer.json passes the host HF_TOKEN through via ${localEnv:HF_TOKEN},
+# but that resolves only at container *creation* — so a token added to the host
+# AFTER the container was built needs a rebuild/reopen to take effect. A token
+# stored via `hf auth login` (in the persistent hf-cache volume) is independent
+# of that and survives rebuilds.
+if [ -n "${HF_TOKEN:-}" ]; then
+  if hf auth whoami >/dev/null 2>&1; then
+    echo "    OK — HF_TOKEN from host is valid (user: $(hf auth whoami 2>/dev/null | head -1))."
+  else
+    echo "    HF_TOKEN is set but validation failed — token may be invalid or expired."
+  fi
+elif hf auth whoami >/dev/null 2>&1; then
+  echo "    OK — authenticated via cached 'hf auth login' (user: $(hf auth whoami 2>/dev/null | head -1))."
+else
+  echo "    No HF token detected. Gated downloads will 401. To fix, either:"
+  echo "      - set HF_TOKEN on the HOST, then rebuild/reopen the container, or"
+  echo "      - run 'hf auth login' in a terminal (persists in the hf-cache volume)."
+fi
+
 echo "==> GPU check:"
 if command -v nvidia-smi >/dev/null 2>&1; then
   nvidia-smi || echo "nvidia-smi present but no GPU visible — check --gpus=all and the NVIDIA Container Toolkit."

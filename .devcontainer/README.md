@@ -57,8 +57,15 @@ unpinned in `pyproject.toml` but frozen exactly by `uv.lock`.
   now a no-op). Weights land in the `hf-cache` named volume (`$HF_HOME`, ext4 on
   the WSL2 disk, ~1.2 GB/s) — **not** the slow 9p `/workspaces` mount. Don't
   override `HF_HOME` into the workspace.
-- Gated models: export `HF_TOKEN` on the host before opening the container; it's
-  passed through automatically.
+- Gated models/datasets (e.g. `Idavidrein/gpqa`): export `HF_TOKEN` on the host,
+  **then rebuild/reopen the container**. The passthrough
+  (`"HF_TOKEN": "${localEnv:HF_TOKEN}"` in `devcontainer.json`) resolves only at
+  container *creation*, so a token added to the host after the container was built
+  won't appear until a rebuild. `post-create.sh` prints whether a valid token was
+  detected; check anytime with `hf auth whoami`. Alternatively, run `hf auth login`
+  once — that token is stored in the persistent `hf-cache` volume and survives
+  rebuilds independently of the host env. Also accept the model/dataset terms on
+  its Hub page.
 - Check server status (once `vllm serve` is up on port 8000):
   ```sh
   curl -s localhost:8000/health                    # -> HTTP 200 when ready
