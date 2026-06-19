@@ -57,6 +57,16 @@ dependencies = [
     # detection + syllable counting. Pure-Python; do not affect the torch/vllm ABI.
     "emoji",
     "syllapy",
+
+    # --- Distribution/diversity metrics (collapse axis) --------------------
+    # Corpus-vs-corpus collapse detectors (real/gen-0 vs synthetic): MAUVE,
+    # generative precision/recall + density/coverage, Vendi diversity. Embeddings
+    # via sentence-transformers. Wrappers over the existing torch/transformers; the
+    # lock is pin-checked to keep torch/vllm/transformers fixed.
+    "mauve-text",
+    "vendi-score",
+    "prdc",
+    "sentence-transformers",
 ]
 
 [tool.uv]

@@ -41,3 +41,23 @@ for the single GPU), `local-completions` (hit a running `vllm serve`). Results l
 
 **Not covered here:** code/agentic benchmarks (**SWE-bench**, **LiveCodeBench**) — these need their
 own separate harnesses (Docker / time-windowed) and should be run as dedicated milestone jobs.
+
+## `diversity.py` — distribution/diversity metrics (collapse axis)
+
+The corpus-vs-corpus complement to `evaluate.py`: where `evaluate.py` scores model
+*capability*, this measures the *distribution/diversity* axis that detects collapse directly
+(the **primary** Area-5 signal). Compares a synthetic corpus against an optional real/Gen-0
+reference (logic in [`../src/llm_replay/metrics/diversity.py`](../src/llm_replay/metrics/diversity.py)).
+
+```sh
+# Full panel: synthetic vs real/Gen-0 reference
+python scripts/diversity.py --synthetic gen3.txt --real gen0.txt --generation 3
+
+# Reference-free only (diversity of one corpus)
+python scripts/diversity.py --synthetic gen3.txt --generation 3 --no-mauve
+```
+
+Corpus specs accept a `.txt` (one text/line), `.jsonl` (`--text-field`), or `hf:<dataset>:<split>:<field>`.
+Metrics: **reference-free** (decline under collapse) — Distinct-n, Self-BLEU, Vendi, vocab size,
+tail mass; **reference-based** (grow under collapse) — MAUVE, prdc precision/recall/density/coverage,
+Fréchet embedding distance, RBF-MMD, unigram-KL. Results → `runs/gen<N>_diversity_<ts>/diversity.json`.
