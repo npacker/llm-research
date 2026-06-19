@@ -22,3 +22,12 @@ num_fewshot: null
 apply_chat_template: true
 
 batch_size: auto
+
+# Backend model_args merged on top of the runner's defaults. For Qwen3.x-style
+# reasoning models, pin the mode so per-generation scores stay comparable.
+# Non-thinking keeps generations short (cheaper canary) and matches the fuller
+# published non-thinking benchmark column. For thinking mode, set
+# enable_thinking: true and think_end_token: "</think>" (so the harness scores
+# the post-reasoning answer, not the scratchpad).
+model_args:
+  enable_thinking: false

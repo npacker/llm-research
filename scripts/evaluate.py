@@ -68,6 +68,11 @@ def parse_args() -> argparse.Namespace:
         help="Recursive-generation label for this checkpoint (e.g. 0, 1, 2)",
     )
     p.add_argument(
+        "--tasks",
+        default=None,
+        help="Comma-separated task override (default: the config's task list)",
+    )
+    p.add_argument(
         "--base-url",
         default=None,
         help="For --backend local-completions: the served /v1/completions URL",
@@ -102,50 +107,65 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def build_model_args(args: argparse.Namespace) -> str:
-    """Assemble the lm-eval ``model_args`` string for the chosen backend."""
+def build_model_args(args: argparse.Namespace, extra: dict | None = None) -> dict:
+    """Assemble the lm-eval ``model_args`` dict for the chosen backend.
+
+    ``extra`` (from the config's ``model_args:`` block) is merged on top, so a
+    config can set e.g. ``enable_thinking: false`` / ``think_end_token: </think>``
+    for reasoning models without changing this script.
+    """
     if args.backend == "hf":
-        return f"pretrained={args.model},dtype=bfloat16"
-    if args.backend == "vllm":
+        base = {"pretrained": args.model, "dtype": "bfloat16"}
+    elif args.backend == "vllm":
         # Single GPU: tensor_parallel_size is pinned to 1 (see CLAUDE.md).
-        parts = [
-            f"pretrained={args.model}",
-            "tensor_parallel_size=1",
-            "dtype=auto",
-            f"gpu_memory_utilization={args.gpu_memory_utilization}",
-        ]
+        base = {
+            "pretrained": args.model,
+            "tensor_parallel_size": 1,
+            "dtype": "auto",
+            "gpu_memory_utilization": args.gpu_memory_utilization,
+        }
         if args.max_model_len is not None:
-            parts.append(f"max_model_len={args.max_model_len}")
-        return ",".join(parts)
-    # local-completions: evaluate a model already served by `vllm serve`.
-    if not args.base_url:
-        raise SystemExit(
-            "--backend local-completions requires --base-url (e.g. http://localhost:8000/v1/completions)"
-        )
-    return f"model={args.model},base_url={args.base_url},num_concurrent=8,tokenizer={args.model}"
+            base["max_model_len"] = args.max_model_len
+    else:  # local-completions: evaluate a model already served by `vllm serve`.
+        if not args.base_url:
+            raise SystemExit(
+                "--backend local-completions requires --base-url (e.g. http://localhost:8000/v1/completions)"
+            )
+        base = {
+            "model": args.model,
+            "base_url": args.base_url,
+            "num_concurrent": 8,
+            "tokenizer": args.model,
+        }
+    if extra:
+        base.update(extra)
+    return base
 
 
 def summarize(results: dict) -> list[tuple[str, str, float]]:
-    """Flatten lm-eval results into (task, metric, value) rows for primary metrics."""
+    """Flatten lm-eval results into (task, metric, value) rows for primary metrics.
+
+    lm-eval metric keys are ``"<metric>,<filter>"`` (e.g. ``exact_match,strict-match``
+    for gsm8k, ``prompt_level_strict_acc,none`` for ifeval). We keep every numeric,
+    non-stderr metric and label it with its filter when it isn't the trivial ``none``.
+    """
     rows: list[tuple[str, str, float]] = []
     for task, metrics in sorted(results.get("results", {}).items()):
         for key, val in metrics.items():
-            if (
-                not isinstance(val, (int, float))
-                or key == "alias"
-                or ",none" not in key
-            ):
+            if not isinstance(val, (int, float)) or "," not in key:
+                continue  # skips `alias` (str) and `sample_len` (no filter)
+            metric, _, flt = key.partition(",")
+            if metric.endswith("_stderr"):
                 continue
-            if key.endswith("_stderr,none"):
-                continue
-            rows.append((task, key.split(",")[0], float(val)))
+            label = metric if flt in ("none", "") else f"{metric} ({flt})"
+            rows.append((task, label, float(val)))
     return rows
 
 
 def main() -> None:
     args = parse_args()
     cfg = yaml.safe_load(args.config.read_text())
-    tasks = cfg["tasks"]
+    tasks = [t.strip() for t in args.tasks.split(",")] if args.tasks else cfg["tasks"]
     num_fewshot = (
         args.num_fewshot if args.num_fewshot is not None else cfg.get("num_fewshot")
     )
@@ -153,7 +173,7 @@ def main() -> None:
     # Imported here so --help works without importing torch/vllm.
     import lm_eval
 
-    model_args = build_model_args(args)
+    model_args = build_model_args(args, cfg.get("model_args"))
     print(
         f"[evaluate] config={cfg['name']} gen={args.generation} backend={args.backend}"
     )
