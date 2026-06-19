@@ -1,0 +1,24 @@
+# Sequence-level EDT (Area 1, condition B): one temperature per sequence, estimated from
+# a short warmup pass (mean entropy over the first warmup_tokens), then full generation at
+# that fixed temperature. Cheaper than token-level; coarser control.
+name: seq_edt
+strategy: seq_edt
+
+prefix:
+  mode: structural
+
+model_args: {}   # real vLLM engine kwargs only (e.g. quantization); raw continuation, no chat template
+
+edt:
+  T0: 0.9
+  N: 0.8
+  theta: 1.0
+
+seq_edt:
+  warmup_tokens: 32    # tokens generated in pass 1 to estimate entropy
+  logprobs_k: 20       # top-k logprobs used for the (approximate) entropy estimate
+
+sampling:
+  max_tokens: 256
+  top_p: 0.95
+  seed: 0

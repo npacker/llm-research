@@ -10,9 +10,9 @@ Maps to the doc's "Shared Infrastructure" table:
 | Module        | Purpose                                                          | Status | Used by |
 |---------------|------------------------------------------------------------------|--------|---------|
 | `metrics/`    | Distribution/diversity collapse metrics (MAUVE, Vendi, prdc, Self-BLEU, Distinct-n, Fréchet, MMD, KL, tail-mass) | **built** — `metrics/diversity.py` | All (esp. 2, 5) |
-| `generation/` | EDT + sampling strategies, prefix-only generation, vLLM pipeline | planned | All |
+| `generation/` | EDT temperature (token/seq/fixed) + prefix-only prompts + vLLM generator + quality validation | **built** — see `generation/README.md` | 1, 4 (→ 2, 5) |
+| `corpus.py`   | Shared corpus loader (file / `hf:` spec)                         | **built** | All |
 | `training/`   | LoRA fine-tune loop, recursive-generation driver                 | planned | 2, 5 |
-| `data/`       | Corpus load / version / mix helpers                              | planned | All |
 | `eval/`       | Capability scoring lives in `scripts/evaluate.py` + `eval_tasks/` (lm-eval) | via lm-eval | All |
 
 `metrics/diversity.py` is driven by [`scripts/diversity.py`](../../scripts/diversity.py); its

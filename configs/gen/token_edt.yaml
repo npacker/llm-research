@@ -1,0 +1,20 @@
+# Token-level EDT (Area 1, condition A): per-token temperature from step entropy,
+# via the EDTLogitsProcessor. Request temperature is forced to 1.0; the processor does
+# all scaling. N and theta set the direction/strength — verify against the EDT source.
+name: token_edt
+strategy: token_edt
+
+prefix:
+  mode: structural
+
+model_args: {}   # real vLLM engine kwargs only (e.g. quantization); raw continuation, no chat template
+
+edt:
+  T0: 0.9   # base temperature (the H -> inf limit)
+  N: 0.8    # <1: confident steps get T<T0; >1: confident steps get T>T0
+  theta: 1.0
+
+sampling:
+  max_tokens: 256
+  top_p: 0.95
+  seed: 0

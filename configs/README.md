@@ -16,6 +16,21 @@ into the backend args (e.g. `enable_thinking: false` to pin reasoning mode).
 
 Custom tasks (SuperGPQA, IFBench) are referenced by name with `--tasks ... --include-path eval_tasks/<task>`.
 
+## `configs/gen/` — generation (built)
+
+Consumed by [`scripts/generate.py`](../scripts/generate.py). Schema: `name`, `strategy`
+(`fixed` | `seq_edt` | `token_edt`), `prefix` (mode + params), `sampling` (vLLM SamplingParams),
+`edt`/`seq_edt` blocks (T0/N/theta etc.), optional `seed_corpus`, and `model_args` for **real
+vLLM engine kwargs only** (quantization/kv_cache_dtype — *not* `enable_thinking`; generation is
+raw continuation). `base.yaml` documents defaults; `fixed.yaml` / `seq_edt.yaml` / `token_edt.yaml`
+are the Area-1 conditions.
+
+## `configs/validate/` — quality validation (built)
+
+`default.yaml` for [`scripts/validate.py`](../scripts/validate.py): per-sample `gates`
+(min_chars / max_words / repetition / line-repeat / language / dedup), a `perplexity` block
+(reference model for coherence), and `embed_model` for the diversity panel.
+
 ## Experiment configs (planned)
 
 One YAML per condition for the Area 1–5 sweeps (e.g. Area 4's 16-cell prefix × temperature

@@ -1,0 +1,27 @@
+# Shared defaults for generation configs (not run directly — copy/extend per strategy).
+# Consumed by scripts/generate.py. Single-GPU: tensor_parallel_size is pinned to 1 by
+# the runner; add fp8/quantization knobs under model_args for large models.
+name: base
+num_samples: 1000
+
+# Seed corpus: source of real text for prefix construction AND the validation reference.
+# A file (.txt/.jsonl) or "hf:<dataset>:<split>:<field>". Only needed for snippet/variable prefixes.
+seed_corpus: null
+text_field: text
+
+# Prefix-only generation (Area 4): none | structural | snippet | variable
+prefix:
+  mode: structural
+  snippet_frac: 0.5
+  variable_fracs: [0.1, 0.25, 0.5]
+
+# Extra vLLM engine kwargs merged into LLM() — REAL EngineArgs only (e.g. quantization,
+# kv_cache_dtype, max_model_len for large models). NOT chat-template args: generation here
+# is raw continuation, so there is no enable_thinking toggle.
+model_args: {}
+
+# vLLM SamplingParams (temperature is set by the strategy for EDT variants).
+sampling:
+  max_tokens: 256
+  top_p: 0.95
+  seed: 0

@@ -31,6 +31,10 @@ The doc's shared **Capability Battery** and Area-5 collapse instrumentation are 
   [`../eval_tasks/`](../eval_tasks/) (SuperGPQA, IFBench) + [`../configs/eval/`](../configs/eval/).
 - **Distribution/diversity axis** (primary collapse signal) —
   [`../scripts/diversity.py`](../scripts/diversity.py) + `../src/llm_replay/metrics/diversity.py`.
+- **Generation (Area 1/4)** — [`../scripts/generate.py`](../scripts/generate.py) +
+  [`../src/llm_replay/generation/`](../src/llm_replay/generation/): fixed / sequence-level /
+  token-level EDT + prefix-only prompts, with a quality-validation pipeline
+  ([`../scripts/validate.py`](../scripts/validate.py): gates + perplexity + diversity panel).
 
-Not yet built: the EDT generation pipeline, LoRA training, and the recursive-generation loop that
-ties both axes together across generations.
+Not yet built: curriculum / task-adaptive / hybrid temperature, LoRA training, and the
+recursive-generation loop that chains generate → validate → train across generations.

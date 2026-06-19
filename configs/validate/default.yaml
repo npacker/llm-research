@@ -1,0 +1,20 @@
+# Quality-validation config for scripts/validate.py.
+# Per-sample gates → coherence (perplexity) → distribution/diversity panel.
+
+gates:
+  min_chars: 20            # reject shorter
+  max_words: 2000          # reject longer
+  repetition_n: 3          # n-gram size for the repetition gate
+  max_repetition_ratio: 0.6  # reject if >60% of n-grams are repeats (degeneration)
+  max_line_repeat_frac: 0.5  # reject if one line is >50% of all lines
+  lang: en                 # reject other languages; null to disable
+  dedup: true              # drop normalised-exact duplicates
+
+# Coherence: per-sample perplexity under a fixed reference model (lower = more coherent).
+perplexity:
+  enabled: true
+  model_id: gpt2-large
+  max_length: 512
+  batch_size: 8
+
+embed_model: sentence-transformers/all-MiniLM-L6-v2

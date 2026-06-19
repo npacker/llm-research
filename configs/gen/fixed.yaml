@@ -1,0 +1,15 @@
+# Fixed-temperature baseline (Area 1, condition D).
+name: fixed
+strategy: fixed
+num_samples: 1000
+
+prefix:
+  mode: structural
+
+model_args: {}   # real vLLM engine kwargs only (e.g. quantization); raw continuation, no chat template
+
+sampling:
+  temperature: 0.8
+  max_tokens: 256
+  top_p: 0.95
+  seed: 0

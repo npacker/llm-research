@@ -5,9 +5,25 @@ verbs of the research workflow:
 
 - **`evaluate.py`** — capability/regression battery via lm-evaluation-harness — **built**
 - **`diversity.py`** — distribution/diversity metrics over corpora (collapse axis) — **built**
+- **`generate.py`** — EDT synthetic-data generation (fixed / seq_edt / token_edt) — **built**
+- **`validate.py`** — quality validation of a generated corpus (gates + perplexity + panel) — **built**
 - `serve` — just use `vllm serve <model> --host 0.0.0.0 --port 8000` directly (no wrapper needed)
-- `generate` — produce synthetic replay data for a config — *planned* (needs the generation pipeline)
 - `train` — LoRA fine-tune the next-generation model — *planned*
+
+## `generate.py` / `validate.py` — generation + quality validation
+
+EDT synthetic-data generation (research plan Area 1) and a validation pipeline; logic in
+[`../src/llm_replay/generation/`](../src/llm_replay/generation/) (see its README).
+
+```sh
+# Generate (strategy comes from the config: fixed | seq_edt | token_edt)
+python scripts/generate.py --config configs/gen/token_edt.yaml --model Qwen/Qwen3.5-0.8B --generation 1
+# Validate the corpus (gates → perplexity → diversity panel vs a real/Gen-0 reference)
+python scripts/validate.py --corpus runs/gen1_token_edt_<ts>/samples.jsonl --real <seed-spec> --generation 1
+```
+
+Generation → `runs/gen<N>_<cfg>_<ts>/{samples.jsonl, meta.json}`; validation →
+`runs/gen<N>_validation_<ts>/{clean.jsonl, validation.json}`. Raw continuation (no chat template).
 
 Keep scripts thin: parse args (typically `--config <path>` into [`../configs/`](../configs/)),
 call library functions, write to [`../runs/`](../runs/). When the package is set up, these can be

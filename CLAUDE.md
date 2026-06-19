@@ -10,10 +10,16 @@ It remains environment-first (a pinned dependency set + CUDA devcontainer; `[too
 
 - `scripts/evaluate.py` — capability/regression battery via **lm-evaluation-harness** (the "is the model still capable?" axis).
 - `scripts/diversity.py` + `src/llm_replay/metrics/diversity.py` — corpus-vs-corpus **distribution/diversity** metrics (the model-collapse axis: MAUVE, Vendi, prdc, Self-BLEU, …).
+- `scripts/generate.py` + `src/llm_replay/generation/` — **EDT synthetic-data generation** (fixed / sequence-level / token-level EDT + prefix-only prompts; vLLM).
+- `scripts/validate.py` — **quality validation** of a generated corpus (per-sample gates + perplexity + diversity panel).
 - `eval_tasks/` — custom lm-eval tasks not shipped upstream (**SuperGPQA**, **IFBench**), loaded via `--include-path`.
-- `configs/eval/` — declarative eval batteries (`canary`, `full`, `full_local`).
+- `configs/eval/`, `configs/gen/`, `configs/validate/` — declarative batteries / generation / validation configs.
 
-**Not built yet:** the generation / LoRA-training / recursive-collapse pipeline (the `generation/` and `training/` parts of `src/llm_replay/` are still placeholders), and a formal `pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via `sys.path` (the repo is **not** installed as a package), so scripts add `src/` to the path rather than relying on an install.
+**Not built yet:** LoRA training and the recursive-collapse loop (the `training/` part of
+`src/llm_replay/` is still a placeholder; generation + validation now exist), and a formal
+`pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via
+`sys.path` (the repo is **not** installed as a package), so scripts add `src/` to the path
+rather than relying on an install.
 
 ## Environment & dependency management (uv)
 
@@ -53,6 +59,10 @@ python scripts/evaluate.py --config configs/eval/canary.yaml --model <id> --back
 
 # Distribution/diversity metrics (collapse axis): synthetic corpus vs real/Gen-0 reference.
 python scripts/diversity.py --synthetic gen3.txt --real gen0.txt --generation 3
+
+# EDT synthetic-data generation (strategy from config: fixed | seq_edt | token_edt) + validate.
+python scripts/generate.py --config configs/gen/token_edt.yaml --model <id> --generation 1
+python scripts/validate.py --corpus runs/gen1_token_edt_<ts>/samples.jsonl --real <seed> --generation 1
 
 # Jupyter kernel "Python (llm-research)" is pre-registered by post-create.sh.
 ```
