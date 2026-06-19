@@ -1,15 +1,30 @@
 # `configs/` — experiment configuration
 
-One YAML file per experiment **condition**. The studies are large factorial / condition sweeps
-(e.g. Area 4's 16-cell prefix × temperature design; Areas 2 & 5's 5–8 temperature strategies),
-so keeping each condition as a small declarative config makes the "N conditions × M samples"
-tables in the research doc reproducible. Runners in [`experiments/`](../experiments/) stay thin
-and just load a config.
+One YAML file per experiment **condition**, kept declarative so runs are reproducible.
 
-Suggested layout:
+## `configs/eval/` — capability batteries (built)
+
+Consumed by [`scripts/evaluate.py`](../scripts/evaluate.py) (lm-evaluation-harness). Schema:
+`tasks`, `num_fewshot`, `apply_chat_template`, `batch_size`, and a `model_args:` block merged
+into the backend args (e.g. `enable_thinking: false` to pin reasoning mode).
+
+| Config | Tasks | Use |
+|--------|-------|-----|
+| `canary.yaml` | GSM8K, IFEval, GPQA (+`model_args: enable_thinking: false`) | cheap per-generation regression check |
+| `full.yaml` | `leaderboard` group (MMLU-Pro, GPQA, BBH, MuSR, MATH-hard, IFEval) + TruthfulQA | milestone battery |
+| `full_local.yaml` | MMLU-Pro, MMLU-Redux, C-Eval, MMMLU (non-thinking) | Tier-1 published-comparison battery |
+
+Custom tasks (SuperGPQA, IFBench) are referenced by name with `--tasks ... --include-path eval_tasks/<task>`.
+
+## Experiment configs (planned)
+
+One YAML per condition for the Area 1–5 sweeps (e.g. Area 4's 16-cell prefix × temperature
+design). Not built yet — the generation/training pipeline they'd drive doesn't exist. Intended
+layout:
 
 ```
 configs/
+├── eval/                     # capability batteries (above) — built
 ├── base.yaml                 # shared defaults (model id, seeds, output paths)
 ├── area1_token_vs_seq/       # one YAML per condition (A/B/C/D)
 ├── area2_curriculum/

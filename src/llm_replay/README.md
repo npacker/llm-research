@@ -1,21 +1,24 @@
-# `src/llm_replay/` — shared research infrastructure (planned)
+# `src/llm_replay/` — shared research code
 
-This is the intended home for the **reusable code** the research program in
+Reusable code the research program in
 [`research/dynamic-temperature-generative-replay.md`](../../research/dynamic-temperature-generative-replay.md)
-shares across all five study areas. It is **not a package yet** — the repo is still a pure
-environment (`[tool.uv] package = false` in `pyproject.toml`). When shared code lands here,
-flip `pyproject.toml` to package mode, add a `[build-system]`, and add tests under
-[`tests/`](../../tests/).
+shares across study areas. The repo is **not installed as a package** (`[tool.uv] package = false`),
+so consumers add `src/` to `sys.path` (the scripts do this) rather than `pip install`-ing it.
 
 Maps to the doc's "Shared Infrastructure" table:
 
-| Planned module      | Purpose                                                          | Used by areas |
-|---------------------|------------------------------------------------------------------|---------------|
-| `generation/`       | EDT + sampling strategies, prefix-only generation, vLLM pipeline | All           |
-| `metrics/`          | Self-BLEU, Distinct-n, MMD, KL, perplexity, collapse indicators  | All           |
-| `training/`         | LoRA fine-tune loop, recursive-generation driver                 | 2, 5          |
-| `data/`             | Corpus load / version / mix helpers                              | All           |
-| `eval/`             | Benchmarking harness, LLM-as-judge wrappers                      | All           |
+| Module        | Purpose                                                          | Status | Used by |
+|---------------|------------------------------------------------------------------|--------|---------|
+| `metrics/`    | Distribution/diversity collapse metrics (MAUVE, Vendi, prdc, Self-BLEU, Distinct-n, Fréchet, MMD, KL, tail-mass) | **built** — `metrics/diversity.py` | All (esp. 2, 5) |
+| `generation/` | EDT + sampling strategies, prefix-only generation, vLLM pipeline | planned | All |
+| `training/`   | LoRA fine-tune loop, recursive-generation driver                 | planned | 2, 5 |
+| `data/`       | Corpus load / version / mix helpers                              | planned | All |
+| `eval/`       | Capability scoring lives in `scripts/evaluate.py` + `eval_tasks/` (lm-eval) | via lm-eval | All |
 
-Keep numeric definitions (Distinct-n, KL direction, EDT temperature math) here so they can be
-unit-tested once, rather than copy-pasted into notebooks.
+`metrics/diversity.py` is driven by [`scripts/diversity.py`](../../scripts/diversity.py); its
+functions are split into reference-free (diversity declines under collapse) and reference-based
+(distance from real/Gen-0 grows). Validated by smoke runs, not yet a committed `pytest` suite —
+see [`tests/`](../../tests/).
+
+When the generation/training modules land and the code is worth installing, this is where to flip
+`pyproject.toml` to package mode (add a `[build-system]`) and drop the `sys.path` shims.

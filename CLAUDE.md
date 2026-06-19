@@ -4,7 +4,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this repo is
 
-A GPU research workspace for LLM inference/experimentation built on the **vLLM + HuggingFace** stack. There is no application source code or test suite yet — the repo is currently the *environment*: a pinned dependency set (`pyproject.toml` + `uv.lock`) and a CUDA devcontainer. Work here means running models, notebooks, and experiments, not building a package (`[tool.uv] package = false`).
+A GPU research workspace for LLM inference/experimentation on the **vLLM + HuggingFace** stack, oriented around a research program on dynamic-temperature generative replay & model collapse (see [`research/`](research/)).
+
+It remains environment-first (a pinned dependency set + CUDA devcontainer; `[tool.uv] package = false`), but it now carries a working **evaluation toolkit**:
+
+- `scripts/evaluate.py` — capability/regression battery via **lm-evaluation-harness** (the "is the model still capable?" axis).
+- `scripts/diversity.py` + `src/llm_replay/metrics/diversity.py` — corpus-vs-corpus **distribution/diversity** metrics (the model-collapse axis: MAUVE, Vendi, prdc, Self-BLEU, …).
+- `eval_tasks/` — custom lm-eval tasks not shipped upstream (**SuperGPQA**, **IFBench**), loaded via `--include-path`.
+- `configs/eval/` — declarative eval batteries (`canary`, `full`, `full_local`).
+
+**Not built yet:** the generation / LoRA-training / recursive-collapse pipeline (the `generation/` and `training/` parts of `src/llm_replay/` are still placeholders), and a formal `pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via `sys.path` (the repo is **not** installed as a package), so scripts add `src/` to the path rather than relying on an install.
 
 ## Environment & dependency management (uv)
 
@@ -16,7 +25,7 @@ The project env is **not** in the workspace — it lives at `/opt/venv` (baked i
 
 ### Pinning philosophy — do not break this
 
-ABI-critical packages are hard `==` pinned and must stay coherent: **torch 2.11.0+cu130, torchvision 0.26.0, vllm 0.23.0** all target CUDA major 13. `torch`/`torchvision` come from the explicit PyTorch `cu130` index (`[tool.uv.sources]`), not PyPI. **Never `--upgrade` torch or vllm blindly** — they must move together and stay on CUDA 13. Convenience tools (jupyterlab, numpy, pandas, ruff, wandb, openai, …) are intentionally unpinned in `pyproject.toml` but frozen exactly by `uv.lock`. `tokenizers` is deliberately not pinned (transformers caps it and the obvious version was never published — let uv resolve it).
+ABI-critical packages are hard `==` pinned and must stay coherent: **torch 2.11.0+cu130, torchvision 0.26.0, vllm 0.23.0** all target CUDA major 13. `torch`/`torchvision` come from the explicit PyTorch `cu130` index (`[tool.uv.sources]`), not PyPI. **Never `--upgrade` torch or vllm blindly** — they must move together and stay on CUDA 13. Convenience tools (jupyterlab, numpy, pandas, ruff, wandb, openai, …) and the eval/metrics stack (lm-eval, sentence-transformers, mauve-text, vendi-score, prdc, emoji, syllapy, …) are intentionally unpinned in `pyproject.toml` but frozen exactly by `uv.lock`. When adding eval/metrics deps, re-lock and confirm the torch/torchvision/vllm/transformers pins did not move (`grep -A1 -E '^name = "(torch|vllm|transformers)"' uv.lock`). `tokenizers` is deliberately not pinned (transformers caps it and the obvious version was never published — let uv resolve it).
 
 ## Common commands
 
@@ -36,8 +45,20 @@ curl -s localhost:8000/v1/models   # which model is loaded
 ruff check .
 ruff format .
 
+# Capability eval battery (lm-eval). Backends: hf | vllm | local-completions.
+python scripts/evaluate.py --config configs/eval/canary.yaml --model <id> --backend vllm
+# Custom tasks (SuperGPQA / IFBench) need --include-path:
+python scripts/evaluate.py --config configs/eval/canary.yaml --model <id> --backend vllm \
+    --tasks supergpqa --include-path eval_tasks/supergpqa
+
+# Distribution/diversity metrics (collapse axis): synthetic corpus vs real/Gen-0 reference.
+python scripts/diversity.py --synthetic gen3.txt --real gen0.txt --generation 3
+
 # Jupyter kernel "Python (llm-research)" is pre-registered by post-create.sh.
 ```
+
+Eval/diversity results write to `runs/` (gitignored). See [`scripts/README.md`](scripts/README.md)
+and [`eval_tasks/README.md`](eval_tasks/README.md) for details.
 
 Gated HuggingFace models: set `HF_TOKEN` in the **host** environment before opening the container — it's passed through automatically. See `.devcontainer/README.md` ("Day-to-day") for download/cache-location and status-check details.
 

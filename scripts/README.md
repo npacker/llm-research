@@ -3,10 +3,11 @@
 Command-line entrypoints that wrap [`../src/llm_replay/`](../src/llm_replay/) for the common
 verbs of the research workflow:
 
-- `serve` — start the vLLM OpenAI-compatible API (`vllm serve <model> --host 0.0.0.0 --port 8000`)
-- `generate` — produce synthetic replay data for a given config
-- `train` — LoRA fine-tune the next-generation model
-- **`evaluate.py`** — capability/regression battery via lm-evaluation-harness *(implemented)*
+- **`evaluate.py`** — capability/regression battery via lm-evaluation-harness — **built**
+- **`diversity.py`** — distribution/diversity metrics over corpora (collapse axis) — **built**
+- `serve` — just use `vllm serve <model> --host 0.0.0.0 --port 8000` directly (no wrapper needed)
+- `generate` — produce synthetic replay data for a config — *planned* (needs the generation pipeline)
+- `train` — LoRA fine-tune the next-generation model — *planned*
 
 Keep scripts thin: parse args (typically `--config <path>` into [`../configs/`](../configs/)),
 call library functions, write to [`../runs/`](../runs/). When the package is set up, these can be

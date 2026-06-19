@@ -22,3 +22,15 @@ The doc's "Shared Infrastructure" maps to [`../src/llm_replay/`](../src/llm_repl
 experiments live in [`../experiments/`](../experiments/) driven by
 [`../configs/`](../configs/); outputs go to [`../runs/`](../runs/) and are tracked with wandb.
 See each directory's README for conventions and the single-GPU feasibility note in the plan doc.
+
+### Implemented so far
+
+The doc's shared **Capability Battery** and Area-5 collapse instrumentation are partly built:
+
+- **Capability axis** — [`../scripts/evaluate.py`](../scripts/evaluate.py) (lm-eval) +
+  [`../eval_tasks/`](../eval_tasks/) (SuperGPQA, IFBench) + [`../configs/eval/`](../configs/eval/).
+- **Distribution/diversity axis** (primary collapse signal) —
+  [`../scripts/diversity.py`](../scripts/diversity.py) + `../src/llm_replay/metrics/diversity.py`.
+
+Not yet built: the EDT generation pipeline, LoRA training, and the recursive-generation loop that
+ties both axes together across generations.
