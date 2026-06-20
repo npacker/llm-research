@@ -28,6 +28,7 @@ dependencies = [
     "peft==0.19.1",
     "bitsandbytes==0.49.2",
     "einops==0.8.2",
+    "trl>=1.6.0",                  # SFTTrainer: LoRA SFT over the corpus mix (training/sft.py)
 
     # --- Research / notebook convenience (versions frozen by uv.lock) ------
     "jupyterlab",
