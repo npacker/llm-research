@@ -1,0 +1,8 @@
+# Condition 3: domain + synthetic (substitution) — synthetic stands in for real general.
+# Fill the synthetic spec with --synthetic <clean.jsonl from generate.py->validate.py>.
+name: domain_synthetic
+total_samples: 10000
+max_len: 1024
+corpora:
+  - {role: domain,    spec: "hf:MedRAG/textbooks:train:content", weight: 0.5}
+  - {role: synthetic, spec: null, weight: 0.5}

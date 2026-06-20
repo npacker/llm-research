@@ -11,8 +11,8 @@ Maps to the doc's "Shared Infrastructure" table:
 |---------------|------------------------------------------------------------------|--------|---------|
 | `metrics/`    | Distribution/diversity collapse metrics (MAUVE, Vendi, prdc, Self-BLEU, Distinct-n, Fréchet, MMD, KL, tail-mass) | **built** — `metrics/diversity.py` | All (esp. 2, 5) |
 | `generation/` | EDT temperature (token/seq/fixed) + prefix-only prompts + vLLM generator + quality validation | **built** — see `generation/README.md` | 1, 4 (→ 2, 5) |
-| `corpus.py`   | Shared corpus loader (file / `hf:` spec)                         | **built** | All |
-| `training/`   | LoRA fine-tune loop, recursive-generation driver                 | planned | 2, 5 |
+| `corpus.py`   | Shared corpus loader (file / `hf:` spec, optional dataset config) | **built** | All |
+| `training/`   | LoRA continued-LM fine-tuning + corpus mixing (forgetting/replay) | **built** — see `training/README.md` | 2, 5 |
 | `eval/`       | Capability scoring lives in `scripts/evaluate.py` + `eval_tasks/` (lm-eval) | via lm-eval | All |
 
 `metrics/diversity.py` is driven by [`scripts/diversity.py`](../../scripts/diversity.py); its

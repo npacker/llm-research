@@ -1,0 +1,8 @@
+# Condition 4: domain + real general + synthetic (augmentation).
+name: domain_general_synthetic
+total_samples: 10000
+max_len: 1024
+corpora:
+  - {role: domain,    spec: "hf:MedRAG/textbooks:train:content", weight: 0.5}
+  - {role: general,   spec: "hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text", weight: 0.25}
+  - {role: synthetic, spec: null, weight: 0.25}

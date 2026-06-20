@@ -1,0 +1,6 @@
+# Condition 5: synthetic-only — completeness reference (train on pure synthetic).
+name: synthetic_only
+total_samples: 10000
+max_len: 1024
+corpora:
+  - {role: synthetic, spec: null, weight: 1.0}

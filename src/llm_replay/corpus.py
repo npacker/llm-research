@@ -16,10 +16,19 @@ def load_corpus(
     spec: str, text_field: str | None = None, limit: int | None = None
 ) -> list[str]:
     if spec.startswith("hf:"):
-        _, dataset, split, field = spec.split(":", 3)
+        # hf:<dataset>:<split>:<field>  or  hf:<dataset>:<config>:<split>:<field>
+        parts = spec[3:].split(":")
+        if len(parts) == 3:
+            dataset, name, split, field = parts[0], None, parts[1], parts[2]
+        elif len(parts) == 4:
+            dataset, name, split, field = parts
+        else:
+            raise SystemExit(
+                "hf spec must be hf:<dataset>:<split>:<field> or hf:<dataset>:<config>:<split>:<field>"
+            )
         from datasets import load_dataset
 
-        ds = load_dataset(dataset, split=split)
+        ds = load_dataset(dataset, name, split=split)
         if limit:  # slice before reading the column so we don't materialise it all
             ds = ds.select(range(min(limit, len(ds))))
         texts = ds[field]

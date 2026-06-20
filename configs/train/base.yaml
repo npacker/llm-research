@@ -1,0 +1,34 @@
+# Reference defaults for training configs (not run directly). The per-condition configs
+# only set `name` + `corpora`; `lora`/`training` fall back to the defaults in
+# src/llm_replay/training/sft.py (shown here for reference / to override).
+#
+# Conditions are corpus mixes (roles: domain | general | synthetic). A `synthetic` role
+# with `spec: null` must be filled at run time via `--synthetic <spec>`.
+name: base
+total_samples: 10000   # rows drawn, split across corpora by weight
+max_len: 1024          # token truncation length for causal-LM loss
+seed: 0
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules: all-linear   # all linear layers (model-agnostic)
+
+training:
+  per_device_train_batch_size: 4
+  gradient_accumulation_steps: 4
+  num_train_epochs: 1
+  learning_rate: 2.0e-4
+  warmup_ratio: 0.03
+  lr_scheduler_type: cosine
+  bf16: true
+  gradient_checkpointing: false
+  logging_steps: 10
+  seed: 0
+
+# Public corpora used by the conditions:
+#   domain  : hf:MedRAG/textbooks:train:content              (medical textbook prose)
+#   general : hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text
+#   synthetic: a generate.py->validate.py clean.jsonl (pass --synthetic)
+corpora: []

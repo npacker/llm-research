@@ -1,0 +1,15 @@
+# Domain-gain battery (medical) for scripts/evaluate.py — pairs with the general
+# canary/full batteries to separate domain gain from general forgetting.
+name: medical
+tasks:
+  - medqa_4options
+  - pubmedqa
+  - medmcqa
+  - mmlu_clinical_knowledge
+  - mmlu_professional_medicine
+  - mmlu_college_medicine
+num_fewshot: null
+apply_chat_template: true
+batch_size: auto
+model_args:
+  enable_thinking: false

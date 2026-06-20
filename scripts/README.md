@@ -7,8 +7,27 @@ verbs of the research workflow:
 - **`diversity.py`** — distribution/diversity metrics over corpora (collapse axis) — **built**
 - **`generate.py`** — EDT synthetic-data generation (fixed / seq_edt / token_edt) — **built**
 - **`validate.py`** — quality validation of a generated corpus (gates + perplexity + panel) — **built**
+- **`train.py`** — LoRA fine-tuning with domain/general/synthetic corpus mixes (forgetting/replay) — **built**
+- **`forgetting_report.py`** — tabulate base-vs-condition eval deltas — **built**
 - `serve` — just use `vllm serve <model> --host 0.0.0.0 --port 8000` directly (no wrapper needed)
-- `train` — LoRA fine-tune the next-generation model — *planned*
+
+## `train.py` / `forgetting_report.py` — LoRA fine-tuning + forgetting study
+
+LoRA continued-LM fine-tuning over domain/general/synthetic corpus mixes; logic in
+[`../src/llm_replay/training/`](../src/llm_replay/training/) (see its README for the condition matrix).
+
+```sh
+python scripts/train.py --config configs/train/domain_synthetic.yaml --model Qwen/Qwen3.5-4B \
+    --synthetic runs/gen1_*/clean.jsonl                    # -> runs/train_<cfg>_<ts>/adapter
+# eval base + adapter via vLLM (NOT a merged model — see training/README.md):
+python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm --lora runs/train_*/adapter \
+    --lora-rank 16 --config configs/eval/canary.yaml --generation domain_synthetic
+python scripts/forgetting_report.py --base base=runs/gen0_canary_*/eval/results.json \
+    --runs domain_only=<results.json> domain_general=<results.json> ...
+```
+
+`evaluate.py --lora <adapter>` applies a LoRA adapter to the base (vllm `lora_local_path` / hf `peft`),
+avoiding a merge. `train.py --merge` also writes a standalone merged checkpoint (HF/portability).
 
 ## `generate.py` / `validate.py` — generation + quality validation
 

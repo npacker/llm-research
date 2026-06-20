@@ -31,6 +31,18 @@ are the Area-1 conditions.
 (min_chars / max_words / repetition / line-repeat / language / dedup), a `perplexity` block
 (reference model for coherence), and `embed_model` for the diversity panel.
 
+## `configs/train/` — LoRA fine-tuning (built)
+
+Consumed by [`scripts/train.py`](../scripts/train.py). Each condition is a `corpora` list of
+`{role, spec, weight}` (roles: domain/general/synthetic; a synthetic spec left null is filled by
+`--synthetic`); `lora`/`training` fall back to `src/llm_replay/training/sft.py` defaults
+(`base.yaml` documents them). Conditions: `domain_only`, `domain_general`, `domain_synthetic`,
+`domain_general_synthetic`, `synthetic_only`. `configs/eval/medical.yaml` is the paired domain-gain
+battery (medqa_4options, pubmedqa, medmcqa, mmlu-medical).
+
+Corpus specs accept an optional dataset config: `hf:<dataset>:<config>:<split>:<field>` (e.g.
+`hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text`) as well as the 4-part `hf:<dataset>:<split>:<field>`.
+
 ## Experiment configs (planned)
 
 One YAML per condition for the Area 1–5 sweeps (e.g. Area 4's 16-cell prefix × temperature

@@ -106,6 +106,18 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--max-model-len", type=int, default=None, help="vLLM backend only")
     p.add_argument(
+        "--lora",
+        default=None,
+        help="Path to a LoRA adapter to apply to the base --model (vllm: lora_local_path; hf: peft). "
+        "Avoids merging — base loads with its own config.",
+    )
+    p.add_argument(
+        "--lora-rank",
+        type=int,
+        default=32,
+        help="max LoRA rank for the vllm backend (>= adapter r)",
+    )
+    p.add_argument(
         "--wandb-project",
         default=None,
         help="If set, log the summary to this wandb project",
@@ -122,6 +134,8 @@ def build_model_args(args: argparse.Namespace, extra: dict | None = None) -> dic
     """
     if args.backend == "hf":
         base = {"pretrained": args.model, "dtype": "bfloat16"}
+        if args.lora:
+            base["peft"] = args.lora  # HFLM applies the PEFT adapter to the base
     elif args.backend == "vllm":
         # Single GPU: tensor_parallel_size is pinned to 1 (see CLAUDE.md).
         base = {
@@ -132,6 +146,10 @@ def build_model_args(args: argparse.Namespace, extra: dict | None = None) -> dic
         }
         if args.max_model_len is not None:
             base["max_model_len"] = args.max_model_len
+        if args.lora:
+            # Load the base (its own config → vLLM-compatible) + apply the adapter.
+            base["lora_local_path"] = args.lora
+            base["max_lora_rank"] = args.lora_rank
     else:  # local-completions: evaluate a model already served by `vllm serve`.
         if not args.base_url:
             raise SystemExit(

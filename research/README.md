@@ -35,6 +35,11 @@ The doc's shared **Capability Battery** and Area-5 collapse instrumentation are 
   [`../src/llm_replay/generation/`](../src/llm_replay/generation/): fixed / sequence-level /
   token-level EDT + prefix-only prompts, with a quality-validation pipeline
   ([`../scripts/validate.py`](../scripts/validate.py): gates + perplexity + diversity panel).
+- **Training / forgetting study (Areas 2/5, single generation)** —
+  [`../scripts/train.py`](../scripts/train.py) + [`../src/llm_replay/training/`](../src/llm_replay/training/):
+  LoRA fine-tuning over domain/general/synthetic mixes; forgetting measured on the general battery,
+  domain gain on `configs/eval/medical.yaml`, compared via
+  [`../scripts/forgetting_report.py`](../scripts/forgetting_report.py).
 
-Not yet built: curriculum / task-adaptive / hybrid temperature, LoRA training, and the
-recursive-generation loop that chains generate → validate → train across generations.
+Not yet built: curriculum / task-adaptive / hybrid temperature, and the **recursive** multi-generation
+loop that chains generate → validate → train across generations.

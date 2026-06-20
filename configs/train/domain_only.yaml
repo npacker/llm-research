@@ -1,0 +1,6 @@
+# Condition 1: domain-only — the catastrophic-forgetting baseline.
+name: domain_only
+total_samples: 10000
+max_len: 1024
+corpora:
+  - {role: domain, spec: "hf:MedRAG/textbooks:train:content", weight: 1.0}

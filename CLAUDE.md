@@ -12,14 +12,15 @@ It remains environment-first (a pinned dependency set + CUDA devcontainer; `[too
 - `scripts/diversity.py` + `src/llm_replay/metrics/diversity.py` — corpus-vs-corpus **distribution/diversity** metrics (the model-collapse axis: MAUVE, Vendi, prdc, Self-BLEU, …).
 - `scripts/generate.py` + `src/llm_replay/generation/` — **EDT synthetic-data generation** (fixed / sequence-level / token-level EDT + prefix-only prompts; vLLM).
 - `scripts/validate.py` — **quality validation** of a generated corpus (per-sample gates + perplexity + diversity panel).
+- `scripts/train.py` + `src/llm_replay/training/` — **LoRA fine-tuning** over domain/general/synthetic corpus mixes (forgetting/replay study); `scripts/forgetting_report.py` tabulates base-vs-condition deltas.
 - `eval_tasks/` — custom lm-eval tasks not shipped upstream (**SuperGPQA**, **IFBench**), loaded via `--include-path`.
-- `configs/eval/`, `configs/gen/`, `configs/validate/` — declarative batteries / generation / validation configs.
+- `configs/eval/`, `configs/gen/`, `configs/validate/`, `configs/train/` — declarative eval / generation / validation / training configs.
 
-**Not built yet:** LoRA training and the recursive-collapse loop (the `training/` part of
-`src/llm_replay/` is still a placeholder; generation + validation now exist), and a formal
-`pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via
-`sys.path` (the repo is **not** installed as a package), so scripts add `src/` to the path
-rather than relying on an install.
+**Not built yet:** the **recursive** multi-generation collapse loop (chaining
+generate→validate→train across generations); single-generation training now exists. Also no formal
+`pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via `sys.path`
+(the repo is **not** installed as a package), so scripts add `src/` to the path rather than relying
+on an install.
 
 ## Environment & dependency management (uv)
 
@@ -59,6 +60,11 @@ python scripts/evaluate.py --config configs/eval/canary.yaml --model <id> --back
 
 # Distribution/diversity metrics (collapse axis): synthetic corpus vs real/Gen-0 reference.
 python scripts/diversity.py --synthetic gen3.txt --real gen0.txt --generation 3
+
+# LoRA fine-tune (corpus mix from config); then eval base+adapter via vLLM (NOT a merged model):
+python scripts/train.py --config configs/train/domain_general.yaml --model Qwen/Qwen3.5-4B
+python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm --lora runs/train_*/adapter \
+    --lora-rank 16 --config configs/eval/canary.yaml --generation domain_general
 
 # EDT synthetic-data generation (strategy from config: fixed | seq_edt | token_edt) + validate.
 python scripts/generate.py --config configs/gen/token_edt.yaml --model <id> --generation 1
