@@ -81,7 +81,6 @@ def main() -> None:
     # Deferred so --help works without torch/vllm.
     from llm_core import corpus
     from llm_core.generation import generator
-    from llm_core.models import resolve_profile
     from llm_replay.generation import prompts
 
     seed_spec = args.seed_corpus or cfg.get("seed_corpus")
@@ -105,22 +104,22 @@ def main() -> None:
         seed=cfg.get("sampling", {}).get("seed", 0),
     )
 
-    model_args = generator.build_model_args(
-        args.model,
-        args.gpu_memory_utilization,
-        args.max_model_len,
-        cfg.get("model_args"),
-    )
     # Auto-detect arch capabilities (chat template / thinking toggle); a config
     # `model:` block overrides. Drives chat-template rendering in the generator.
-    profile = resolve_profile(args.model, overrides=cfg.get("model"))
+    llm, profile, model_args = generator.build_engine(
+        args.model,
+        strategy=strategy,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        max_model_len=args.max_model_len,
+        model_args_extra=cfg.get("model_args"),
+        profile_overrides=cfg.get("model"),
+    )
     print(f"[generate] config={cfg['name']} gen={args.generation} strategy={strategy}")
     print(
         f"[generate] model={args.model} prefix={prefix['mode']} n={len(prompt_records)}"
     )
     print(f"[generate] model_args={model_args}")
 
-    llm = generator.make_llm(model_args, strategy)
     records = generator.generate(
         llm,
         prompt_records,

@@ -16,16 +16,9 @@ Example
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 
-from llm_core.evaluation import summarize
-
-
-def _flatten(results_json: Path) -> dict[str, float]:
-    """task -> primary metric value, reusing the package's summarize()."""
-    r = json.loads(Path(results_json).read_text())
-    return {f"{t}/{m}": v for t, m, v in summarize(r)}
+from llm_core.evaluation import flatten_results as _flatten
 
 
 def parse_args() -> argparse.Namespace:

@@ -76,6 +76,60 @@ def _normalise(text: str) -> str:
     return re.sub(r"\s+", " ", text.strip().lower())
 
 
+# Degeneration verdict thresholds for a fine-tuned model's own samples (coherence check).
+DEFAULT_COHERENCE_THRESHOLDS = {
+    "min_pass_rate": 0.8,  # too many gated samples (looping/short/incoherent) → degenerate
+    "max_self_bleu": 0.5,  # samples too similar to each other → mode collapse
+    "min_distinct_2": 0.3,  # too few distinct bigrams → repetitive
+}
+
+
+def coherence_report(
+    texts: list[str],
+    *,
+    gates: dict | None = None,
+    thresholds: dict | None = None,
+) -> dict:
+    """Score a *model's own* generations for looping / incoherence / mode collapse.
+
+    Unlike ``validate()`` (which scores a corpus for replay and pulls in the embedding
+    panel), this is a lightweight, GPU-free verdict over the per-sample gates plus two
+    reference-free diversity signals (distinct-2, self-BLEU). Returns a report with a
+    boolean ``degenerate`` flag — the failure-mode gate used by the Exp-0 sweep.
+    """
+    from llm_core.metrics import diversity
+
+    g = {**DEFAULT_GATES, "lang": None, **(gates or {})}  # skip langdetect by default
+    t = {**DEFAULT_COHERENCE_THRESHOLDS, **(thresholds or {})}
+
+    rejections: Counter = Counter()
+    kept = 0
+    for text in texts:
+        reasons = gate_sample(text, g)
+        if reasons:
+            rejections[reasons[0]] += 1
+        else:
+            kept += 1
+
+    pass_rate = kept / len(texts) if texts else 0.0
+    distinct_2 = diversity.distinct_n(texts, 2) if texts else 0.0
+    sbleu = diversity.self_bleu(texts) if len(texts) >= 2 else 0.0
+    degenerate = (
+        pass_rate < t["min_pass_rate"]
+        or sbleu > t["max_self_bleu"]
+        or distinct_2 < t["min_distinct_2"]
+    )
+    return {
+        "n": len(texts),
+        "pass_rate": pass_rate,
+        "rejections": dict(rejections),
+        "distinct_2": distinct_2,
+        "self_bleu": sbleu,
+        "degenerate": bool(degenerate),
+        "thresholds": t,
+    }
+
+
 def validate(
     synth: list[str],
     real: list[str] | None = None,

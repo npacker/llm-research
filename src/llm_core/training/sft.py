@@ -19,6 +19,26 @@ from pathlib import Path
 from ..models import ModelProfile
 
 
+def _loss_curve(log_history: list[dict]) -> list[dict]:
+    """Compact (step, train_loss?, eval_*_loss?) trace from the Trainer's log history.
+
+    The Trainer logs train loss (``loss``) and eval loss in separate records. Captures the
+    single-set ``eval_loss`` *and* per-set ``eval_<name>_loss`` keys (e.g. ``eval_domain_loss``,
+    ``eval_general_loss`` when ``eval_dataset`` is a dict) so ``meta.json`` carries every curve.
+    """
+    curve = []
+    for rec in log_history:
+        losses = {}
+        if "loss" in rec:
+            losses["train_loss"] = rec["loss"]
+        losses.update(
+            {k: v for k, v in rec.items() if k.startswith("eval_") and k.endswith("_loss")}
+        )
+        if losses:
+            curve.append({"step": rec.get("step"), **losses})
+    return curve
+
+
 def build_lora_config(
     cfg: dict, default_target_modules: str | list[str] = "all-linear"
 ):
@@ -34,13 +54,51 @@ def build_lora_config(
     )
 
 
-def build_sft_config(output_dir: Path, tcfg: dict, max_len: int):
+def build_sft_config(
+    output_dir: Path,
+    tcfg: dict,
+    max_len: int,
+    *,
+    eval_enabled: bool = False,
+    best_metric: str = "eval_loss",
+):
     """SFTConfig (a TrainingArguments subclass) for raw-text continued-LM SFT.
 
     `max_length` truncates each text to `max_len`; `packing` stays off so samples are
     not concatenated across document boundaries (per-sample, padded per batch).
+
+    With ``eval_enabled`` (an eval split was supplied), turn on periodic evaluation so
+    training/validation loss are both logged, and keep the best-by-``best_metric`` weights
+    (``load_best_model_at_end``) so early stopping can trim overfitting — the main
+    no-rehearsal lever against catastrophic forgetting. ``best_metric`` is ``eval_loss`` for
+    a single eval set, or ``eval_<name>_loss`` (e.g. ``eval_domain_loss``) when eval is a
+    dict of named sets — selection tracks the *domain* loss, never the general/forgetting
+    one (which only rises). ``eval_on_start`` logs the step-0 (base-model) losses so a
+    base-vs-best Δ is available from the curve. This needs ``save_strategy`` to match
+    ``eval_strategy``; the final adapter is still saved explicitly by ``train_lora``.
+    Without an eval split, behaviour is unchanged (no eval, save-it-ourselves).
     """
     from trl import SFTConfig
+
+    eval_steps = tcfg.get("eval_steps", 50)
+    eval_args = (
+        {
+            "eval_strategy": "steps",
+            "eval_steps": eval_steps,
+            "eval_on_start": True,  # step-0 eval ≈ base model (LoRA starts at zero) → Δ
+            "per_device_eval_batch_size": tcfg.get(
+                "per_device_eval_batch_size", tcfg.get("per_device_train_batch_size", 4)
+            ),
+            "save_strategy": "steps",
+            "save_steps": eval_steps,
+            "save_total_limit": 1,
+            "load_best_model_at_end": True,
+            "metric_for_best_model": best_metric,
+            "greater_is_better": False,
+        }
+        if eval_enabled
+        else {"save_strategy": "no"}  # we save the adapter (and optional merge) ourselves
+    )
 
     return SFTConfig(
         output_dir=str(output_dir),
@@ -54,13 +112,13 @@ def build_sft_config(output_dir: Path, tcfg: dict, max_len: int):
         bf16=tcfg.get("bf16", True),
         gradient_checkpointing=tcfg.get("gradient_checkpointing", False),
         logging_steps=tcfg.get("logging_steps", 10),
-        save_strategy="no",  # we save the adapter (and optional merge) ourselves
-        report_to="none",
+        report_to=tcfg.get("report_to", "none"),
         seed=tcfg.get("seed", 0),
         # SFT-specific: tokenise the mixed dataset's `text` column, truncate, no packing.
         dataset_text_field="text",
         max_length=max_len,
         packing=tcfg.get("packing", False),
+        **eval_args,
     )
 
 
@@ -68,6 +126,8 @@ def train_lora(
     model_id: str,
     mixed_dataset,
     *,
+    eval_dataset=None,
+    early_stopping_patience: int = 0,
     lora_cfg: dict,
     train_cfg: dict,
     max_len: int,
@@ -83,9 +143,16 @@ def train_lora(
     For a VLM base (``profile.is_vlm``), merging produces a text-only sub-arch that vLLM
     may not register — so the merged checkpoint is for HF/portability, not vLLM. The LoRA
     target modules default to ``profile.lora_target_modules`` (config can override).
+
+    ``eval_dataset`` may be a single set (logged as ``eval_loss``) or a dict of named sets
+    (e.g. ``{"domain": ..., "general": ...}`` → ``eval_domain_loss``/``eval_general_loss``).
+    With a dict, best-model selection / early stopping track ``eval_domain_loss`` (domain fit),
+    while ``eval_general_loss`` is logged purely as the cheap forgetting proxy. When eval is on,
+    the best weights are restored at the end; ``early_stopping_patience > 0`` adds an
+    EarlyStoppingCallback. The returned summary carries ``best_eval_loss`` and a ``loss_curve``.
     Returns a summary dict.
     """
-    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from transformers import AutoModelForCausalLM, AutoTokenizer, EarlyStoppingCallback
     from trl import SFTTrainer
 
     profile = profile or ModelProfile()
@@ -94,13 +161,36 @@ def train_lora(
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
+    callbacks = []
+    if eval_dataset is not None and early_stopping_patience > 0:
+        callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
+
+    # Select best/early-stop by the learning loss. For a dict of named eval sets, track
+    # the "domain" set when present (the learning signal — never the general/forgetting
+    # one, which only rises), else the first set; for a single set, the plain `eval_loss`.
+    # metric_for_best_model must name a metric the Trainer actually logs, or transformers
+    # raises KeyError at the first eval — so derive it from the keys, don't assume "domain".
+    if isinstance(eval_dataset, dict):
+        learning_set = "domain" if "domain" in eval_dataset else next(iter(eval_dataset))
+        best_metric = f"eval_{learning_set}_loss"
+    else:
+        best_metric = "eval_loss"
+
     model = AutoModelForCausalLM.from_pretrained(model_id, dtype="auto")
     trainer = SFTTrainer(
         model=model,
-        args=build_sft_config(output_dir, train_cfg, max_len),
+        args=build_sft_config(
+            output_dir,
+            train_cfg,
+            max_len,
+            eval_enabled=eval_dataset is not None,
+            best_metric=best_metric,
+        ),
         train_dataset=mixed_dataset,
+        eval_dataset=eval_dataset,
         processing_class=tokenizer,
         peft_config=build_lora_config(lora_cfg, profile.lora_target_modules),
+        callbacks=callbacks or None,
     )
     # After construction trainer.model is the peft-wrapped model.
     trainable, total = trainer.model.get_nb_trainable_parameters()
@@ -115,7 +205,10 @@ def train_lora(
         "total_params": int(total),
         "adapter_dir": str(adapter_dir),
         "lora_rank": int(lora_cfg.get("r", 16)),
+        "loss_curve": _loss_curve(trainer.state.log_history),
     }
+    if eval_dataset is not None and trainer.state.best_metric is not None:
+        summary["best_eval_loss"] = float(trainer.state.best_metric)
     if merge:
         if profile.is_vlm:
             warnings.warn(

@@ -36,13 +36,45 @@ def build_model_args(
     return args
 
 
-def make_llm(model_args: dict, strategy: str):
-    """Construct the vLLM engine; register the EDT processor only for token-EDT."""
+def make_llm(model_args: dict, strategy: str, enable_lora: bool = False):
+    """Construct the vLLM engine; register the EDT processor only for token-EDT.
+
+    With ``enable_lora`` the engine accepts a per-request ``LoRARequest`` (see
+    ``generate(..., lora_request=...)``) — used to sample from a base + adapter
+    checkpoint without merging.
+    """
     from vllm import LLM
 
+    args = {**model_args, "enable_lora": True} if enable_lora else model_args
     if strategy == "token_edt":
-        return LLM(logits_processors=[EDTLogitsProcessor], **model_args)
-    return LLM(**model_args)
+        return LLM(logits_processors=[EDTLogitsProcessor], **args)
+    return LLM(**args)
+
+
+def build_engine(
+    model: str,
+    *,
+    strategy: str = "fixed",
+    gpu_memory_utilization: float = 0.9,
+    max_model_len: int | None = None,
+    model_args_extra: dict | None = None,
+    enable_lora: bool = False,
+    profile_overrides: dict | None = None,
+):
+    """Resolve the model profile and construct the vLLM engine in one call.
+
+    Bundles the ``build_model_args`` → ``resolve_profile`` → ``make_llm`` sequence shared
+    by the generation scripts (``generate.py``, ``coherence_check.py``) so the engine /
+    LoRA wiring lives in one place. Returns ``(llm, profile, model_args)``.
+    """
+    from ..models import resolve_profile
+
+    model_args = build_model_args(
+        model, gpu_memory_utilization, max_model_len, model_args_extra
+    )
+    profile = resolve_profile(model, overrides=profile_overrides)
+    llm = make_llm(model_args, strategy, enable_lora=enable_lora)
+    return llm, profile, model_args
 
 
 def _topk_entropy(logprobs_step: dict) -> float:
@@ -73,6 +105,7 @@ def generate(
     seq_edt: dict | None = None,
     apply_chat_template: bool | None = None,
     profile: ModelProfile | None = None,
+    lora_request=None,
 ) -> list[dict]:
     """Generate one continuation per prompt record; return enriched records.
 
@@ -137,7 +170,7 @@ def generate(
             )
             for i in range(n)
         ]
-        warm = llm.generate(texts, warm_sp)
+        warm = llm.generate(texts, warm_sp, lora_request=lora_request)
         per_req_temp = []
         for out in warm:
             steps = out.outputs[0].logprobs or []
@@ -155,7 +188,7 @@ def generate(
     else:
         raise ValueError(f"unknown strategy {strategy!r}")
 
-    outs = llm.generate(texts, sp)
+    outs = llm.generate(texts, sp, lora_request=lora_request)
     records = []
     for p, out, t in zip(prompts, outs, per_req_temp):
         rec = dict(p)

@@ -51,9 +51,11 @@ dependencies = [
     # reproducible capability evals (MMLU-Pro, GPQA, IFEval, MATH, BBH, MuSR via
     # the built-in `leaderboard` task group). Has first-class vLLM backend support.
     # Extras `ifeval`/`math` pull the verifiable-task deps (nltk/langdetect,
-    # sympy/antlr4). Code/agentic benches (SWE-bench, LiveCodeBench) use their own
-    # separate harnesses — not covered here.
-    "lm-eval[ifeval,math]",
+    # sympy/antlr4); `api` pulls the OpenAI-compatible client deps (tenacity,
+    # tqdm-multiprocess) used by the `local-completions` backend — i.e. evaluating a
+    # model served by `vllm serve` (the Exp-0 sweep's shared-engine Stage B). Code/agentic
+    # benches (SWE-bench, LiveCodeBench) use their own separate harnesses — not covered here.
+    "lm-eval[ifeval,math,api]",
     # Verifier deps for the vendored IFBench task (eval_tasks/ifbench/): emoji
     # detection + syllable counting. Pure-Python; do not affect the torch/vllm ABI.
     "emoji",

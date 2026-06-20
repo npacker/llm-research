@@ -8,6 +8,7 @@ from llm_replay.generation.validation import (
     DEFAULT_GATES,
     _max_line_repeat_frac,
     _repetition_ratio,
+    coherence_report,
     gate_sample,
 )
 
@@ -80,3 +81,49 @@ def test_gate_language_detection():
         "Englisch verfasst wurde und daher abgelehnt werden sollte."
     )
     assert "wrong_language" in gate_sample(german, gates)
+
+
+# --- coherence_report: the looping/incoherence verdict used by the Exp-0 sweep --- #
+
+_CLEAN_SAMPLES = [
+    "The mitochondria is the membrane-bound organelle that produces most of a cell's ATP.",
+    "Photosynthesis converts light energy into chemical energy stored in glucose molecules.",
+    "Antibiotics treat bacterial infections but have no effect on viral illnesses at all.",
+    "The hippocampus plays a central role in forming and consolidating new long-term memories.",
+    "Vaccines train the adaptive immune system by presenting harmless antigen fragments.",
+    "Insulin is a hormone secreted by the pancreas that regulates blood glucose levels.",
+    "The renal nephron filters blood and reabsorbs water, salts, and useful nutrients.",
+    "Hemoglobin in red blood cells carries oxygen from the lungs to peripheral tissues.",
+    "Neurons communicate across synapses using both electrical and chemical signalling.",
+    "The liver metabolizes drugs and detoxifies a wide range of circulating compounds.",
+]
+
+
+def test_coherence_clean_samples_not_degenerate():
+    report = coherence_report(_CLEAN_SAMPLES)
+    assert report["pass_rate"] == 1.0
+    assert report["degenerate"] is False
+    assert report["distinct_2"] > 0.3
+
+
+def test_coherence_looping_is_degenerate():
+    """Each sample loops a single line → gated as repetitive/line_repeat → degenerate."""
+    looping = ["\n".join(["the same line over and over"] * 6) for _ in range(10)]
+    report = coherence_report(looping)
+    assert report["pass_rate"] < 0.8
+    assert report["degenerate"] is True
+    assert set(report["rejections"]) & {"repetitive", "line_repeat"}
+
+
+def test_coherence_mode_collapse_is_degenerate():
+    """Identical (individually coherent) samples pass the gates but collapse diversity."""
+    identical = [_CLEAN_SAMPLES[0]] * 10
+    report = coherence_report(identical)
+    assert report["pass_rate"] == 1.0  # each passes per-sample gates
+    assert report["distinct_2"] < 0.3 or report["self_bleu"] > 0.5
+    assert report["degenerate"] is True
+
+
+def test_coherence_thresholds_overridable():
+    report = coherence_report(_CLEAN_SAMPLES, thresholds={"min_pass_rate": 1.01})
+    assert report["degenerate"] is True  # impossible bar → always degenerate

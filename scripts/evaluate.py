@@ -86,6 +86,12 @@ def parse_args() -> argparse.Namespace:
         help="For --backend local-completions: the served /v1/completions URL",
     )
     p.add_argument(
+        "--tokenizer",
+        default=None,
+        help="For --backend local-completions: tokenizer to use (defaults to --model). "
+        "Set to the base model id when --model is a served LoRA-adapter name.",
+    )
+    p.add_argument(
         "--limit",
         type=int,
         default=None,
@@ -166,7 +172,9 @@ def lm_eval_model_args(
             "model": args.model,
             "base_url": args.base_url,
             "num_concurrent": 8,
-            "tokenizer": args.model,
+            # A served LoRA's --model is the adapter *name* (not a resolvable HF id);
+            # --tokenizer supplies the base id so lm-eval can tokenise.
+            "tokenizer": args.tokenizer or args.model,
         }
     if profile_args:
         base.update(profile_args)
@@ -197,8 +205,10 @@ def main() -> None:
 
     # Auto-detect arch capabilities (loads config/tokenizer, not weights); a config
     # `model:` block overrides. Supplies the thinking-off policy + chat-template default
-    # so eval configs only spell out non-default overrides.
-    profile = resolve_profile(args.model, overrides=cfg.get("model"))
+    # so eval configs only spell out non-default overrides. For local-completions the
+    # --model is a served adapter *name* (not an HF id), so detect from --tokenizer (the
+    # base id) when it's given.
+    profile = resolve_profile(args.tokenizer or args.model, overrides=cfg.get("model"))
     model_args = lm_eval_model_args(
         args, profile.eval_model_args(), cfg.get("model_args")
     )

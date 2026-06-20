@@ -22,10 +22,17 @@ training:
   learning_rate: 2.0e-4
   warmup_ratio: 0.03
   lr_scheduler_type: cosine
+  weight_decay: 0.0
   bf16: true
   gradient_checkpointing: false
   logging_steps: 10
   seed: 0
+  # Validation/eval loss tracking (active when train.py holds out a --val-frac slice):
+  eval_steps: 50                  # evaluate + checkpoint every N steps
+  per_device_eval_batch_size: 4   # defaults to per_device_train_batch_size
+  # report_to: wandb              # set (or pass --wandb-project) to log loss curves
+  # CLI overrides on train.py layer over this block: --lr --epochs --weight-decay
+  # --eval-steps --early-stopping-patience; --lora-rank/--lora-alpha/--lora-dropout over `lora`.
 
 # Public corpora used by the conditions:
 #   domain  : hf:MedRAG/textbooks:train:content              (medical textbook prose)
