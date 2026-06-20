@@ -101,6 +101,7 @@ def main() -> None:
         n=num_samples,
         snippet_frac=prefix.get("snippet_frac", 0.5),
         variable_fracs=tuple(prefix.get("variable_fracs", (0.1, 0.25, 0.5))),
+        chat_prompt=prefix.get("chat_prompt"),
         seed=cfg.get("sampling", {}).get("seed", 0),
     )
 
@@ -124,6 +125,7 @@ def main() -> None:
         gen_kwargs=cfg.get("sampling", {}),
         edt=cfg.get("edt"),
         seq_edt=cfg.get("seq_edt"),
+        apply_chat_template=cfg.get("apply_chat_template", False),
     )
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

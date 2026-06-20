@@ -31,18 +31,27 @@ All are corpus mixes (configs in [`../configs/train/`](../configs/train/)); the 
 | 4 | `domain_general_synthetic` | domain .5 / general .25 / synthetic .25 | H4 augmentation |
 | 5 | `synthetic_only` | synthetic 1.0 | H5 reference |
 
+## Prereqs
+- **Run [`exp0-forgetting-signal.md`](exp0-forgetting-signal.md) first** to fix the training recipe
+  (LR/epochs/scale) at a setting with a real learn-and-forget tradeoff.
+- **Mixing unit** per [`exp-mixing-unit.md`](exp-mixing-unit.md): use the chosen unit (likely
+  token-budget) and **report realized token shares**, not just nominal row weights.
+
 ## Setup
-- **Model:** `Qwen/Qwen3.5-4B` (tooling is `--model`-agnostic). Note it's a **VLM**; we fine-tune
-  the text tower (LoRA, continued-LM on raw text). Single GPU.
+- **Model:** `Qwen/Qwen3.5-4B` (**instruct** — decided). It's a VLM; we fine-tune the text tower
+  (LoRA, continued-LM on raw text). Single GPU. Format drift is a *measured* variable here: read
+  IFEval (format-following) apart from knowledge tasks.
 - **Domain corpus:** `hf:MedRAG/textbooks:train:content` (medical textbook prose).
-- **General corpus:** `hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text`.
-- **Synthetic corpus:** generated from the **base** model with [`../scripts/generate.py`](../scripts/generate.py)
-  (strategy `token_edt`, prefix `snippet` seeded from the general corpus → base-model general-domain
-  continuations), then quality-filtered by [`../scripts/validate.py`](../scripts/validate.py); the
-  resulting `clean.jsonl` is the synthetic spec. *(Generator strategy — `token_edt` vs `fixed` vs
-  `seq_edt` — is a follow-up knob.)*
-- **Training:** LoRA (`target_modules: all-linear`, r=16) continued-LM, `total_samples=10000`,
-  `max_len=1024`. Defaults in [`../src/llm_replay/training/sft.py`](../src/llm_replay/training/sft.py).
+- **General corpus:** `hf:NeelNanda/pile-10k:train:text` (clean general documents; long, so
+  token-budget mixing matters).
+- **Synthetic corpus:** generated from the **same base model** via
+  [`../scripts/generate.py`](../scripts/generate.py) with [`../configs/gen/token_edt_chat.yaml`](../configs/gen/token_edt_chat.yaml)
+  — **chat-template, no corpus seeding** (the instruct model writes its own general-knowledge
+  passages, so it genuinely stands in for unavailable pretraining data), then quality-filtered by
+  [`../scripts/validate.py`](../scripts/validate.py); the `clean.jsonl` is the synthetic spec.
+  *(Generator strategy — `token_edt` vs `fixed` vs `seq_edt` — is a follow-up knob.)*
+- **Training:** LoRA (`target_modules: all-linear`) continued-LM; LR/epochs/scale from Exp 0.
+  Defaults in [`../src/llm_replay/training/sft.py`](../src/llm_replay/training/sft.py).
 
 ## Metrics
 - **Forgetting (primary axis):** general capability battery via
@@ -62,11 +71,9 @@ All are corpus mixes (configs in [`../configs/train/`](../configs/train/)); the 
 python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm --config configs/eval/canary.yaml  --generation base
 python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm --config configs/eval/medical.yaml --generation base
 
-# 1. Synthetic corpus from the base model (for conditions 3/4/5)
-python scripts/generate.py --config configs/gen/token_edt.yaml --model Qwen/Qwen3.5-4B --generation 1 \
-    --seed-corpus hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text   # prefix mode: set snippet in the config
-python scripts/validate.py --corpus runs/gen1_token_edt_*/samples.jsonl \
-    --real hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text --generation 1   # -> clean.jsonl
+# 1. Synthetic corpus from the base model (for conditions 3/4/5) — chat-template, NO seeding
+python scripts/generate.py --config configs/gen/token_edt_chat.yaml --model Qwen/Qwen3.5-4B --generation 1
+python scripts/validate.py --corpus runs/gen1_token_edt_chat_*/samples.jsonl --generation 1   # -> clean.jsonl
 
 # 2. Train each condition (domain ppl auto-reported into meta.json)
 python scripts/train.py --config configs/train/domain_only.yaml              --model Qwen/Qwen3.5-4B

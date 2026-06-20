@@ -57,6 +57,24 @@ def _topk_entropy(logprobs_step: dict) -> float:
     return -sum(p * math.log(p) for p in probs if p > 0)
 
 
+def _render_chat(llm, texts: list[str]) -> list[str]:
+    """Wrap each user-turn in the model's chat template (no thinking) for chat-mode replay."""
+    tok = llm.get_tokenizer()
+    out = []
+    for t in texts:
+        msgs = [{"role": "user", "content": t}]
+        try:
+            r = tok.apply_chat_template(
+                msgs, add_generation_prompt=True, tokenize=False, enable_thinking=False
+            )
+        except TypeError:  # tokenizer doesn't take enable_thinking
+            r = tok.apply_chat_template(
+                msgs, add_generation_prompt=True, tokenize=False
+            )
+        out.append(r)
+    return out
+
+
 def generate(
     llm,
     prompts: list[dict],
@@ -65,37 +83,40 @@ def generate(
     gen_kwargs: dict,
     edt: dict | None = None,
     seq_edt: dict | None = None,
+    apply_chat_template: bool = False,
 ) -> list[dict]:
     """Generate one continuation per prompt record; return enriched records.
 
-    `prompts` are records from `prompts.build_prompts` (each has `prompt`). Returns the
-    same records with `text`, `strategy`, and the temperature/EDT settings used.
+    With `apply_chat_template`, each prompt is wrapped in the model's chat template (for
+    `chat`-mode generative replay from an instruct model). Every request gets a distinct
+    seed (base + index), so identical prompts (chat mode) still yield diverse samples.
     """
     from vllm import SamplingParams
 
     texts = [p["prompt"] for p in prompts]
+    if apply_chat_template:
+        texts = _render_chat(llm, texts)
+
     base = dict(gen_kwargs)
-    seed = base.pop("seed", None)
+    seed0 = base.pop("seed", 0) or 0
+    n = len(texts)
 
     if strategy == "fixed":
-        sp = SamplingParams(seed=seed, **base)
-        per_req_temp = [base.get("temperature")] * len(texts)
+        sp = [SamplingParams(seed=seed0 + i, **base) for i in range(n)]
+        per_req_temp = [base.get("temperature")] * n
 
     elif strategy == "token_edt":
         if not edt:
             raise ValueError(
                 "strategy 'token_edt' requires an `edt` block (T0, N, theta)"
             )
-        sp = SamplingParams(
-            temperature=1.0,
-            seed=seed,
-            extra_args={
-                "edt_mode": "token",
-                **{k: edt[k] for k in ("T0", "N", "theta")},
-            },
-            **{k: v for k, v in base.items() if k != "temperature"},
-        )
-        per_req_temp = ["token_edt"] * len(texts)
+        ea = {"edt_mode": "token", **{k: edt[k] for k in ("T0", "N", "theta")}}
+        b = {k: v for k, v in base.items() if k != "temperature"}
+        sp = [
+            SamplingParams(seed=seed0 + i, temperature=1.0, extra_args=ea, **b)
+            for i in range(n)
+        ]
+        per_req_temp = ["token_edt"] * n
 
     elif strategy == "seq_edt":
         if not edt:
@@ -106,13 +127,16 @@ def generate(
         warmup_tokens = int(cfg.get("warmup_tokens", 32))
         k = int(cfg.get("logprobs_k", 20))
         # Pass 1: short warmup at T0 to estimate each sequence's mean entropy.
-        warm_sp = SamplingParams(
-            temperature=edt["T0"],
-            max_tokens=warmup_tokens,
-            logprobs=k,
-            seed=seed,
-            top_p=base.get("top_p", 1.0),
-        )
+        warm_sp = [
+            SamplingParams(
+                seed=seed0 + i,
+                temperature=edt["T0"],
+                max_tokens=warmup_tokens,
+                logprobs=k,
+                top_p=base.get("top_p", 1.0),
+            )
+            for i in range(n)
+        ]
         warm = llm.generate(texts, warm_sp)
         per_req_temp = []
         for out in warm:
@@ -123,7 +147,11 @@ def generate(
                 edt_temperature(h_avg, edt["T0"], edt["N"], edt["theta"])
             )
         # Pass 2: full generation, one temperature per request.
-        sp = [SamplingParams(temperature=t, seed=seed, **base) for t in per_req_temp]
+        b = {k2: v for k2, v in base.items() if k2 != "temperature"}
+        sp = [
+            SamplingParams(seed=seed0 + i, temperature=per_req_temp[i], **b)
+            for i in range(n)
+        ]
     else:
         raise ValueError(f"unknown strategy {strategy!r}")
 

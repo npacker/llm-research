@@ -1,0 +1,21 @@
+# Synthetic generative replay from an INSTRUCT model — chat-template, NO corpus seeding.
+# The intended synthetic method for Experiment 1: the instruct model generates its own
+# general-knowledge passages (no real data used → can stand in for unavailable pretraining
+# data). token-level EDT sampling; diversity comes from per-sample seeds + temperature.
+name: token_edt_chat
+strategy: token_edt
+apply_chat_template: true
+
+prefix:
+  mode: chat
+  # chat_prompt: "<optional: override the default generic instruction>"
+
+edt:
+  T0: 0.9
+  N: 0.8
+  theta: 1.0
+
+sampling:
+  max_tokens: 512
+  top_p: 0.95
+  seed: 0

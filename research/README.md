@@ -16,11 +16,16 @@ Research planning documents and per-paper writeups for this workspace.
   Includes hypotheses, experimental protocols, metrics, challenges, timelines, and a
   publication strategy.
 
-- [`exp1-forgetting-replay.md`](exp1-forgetting-replay.md) — **Experiment 1** (the first concrete
-  test): single-generation catastrophic-forgetting & generative-replay study on a medical domain
-  (Qwen3.5-4B, LoRA continued-LM). 5 corpus-mix conditions (domain-only … synthetic-only) vs. the
-  base model; forgetting on the general battery, domain gain via held-out perplexity + medical QA.
-  Executable protocol over the built `generate`/`validate`/`train`/`evaluate`/`forgetting_report` tooling.
+- [`exp0-forgetting-signal.md`](exp0-forgetting-signal.md) — **Experiment 0** (runs first):
+  hyperparameter sweep to find a regime where domain-only fine-tuning *both* learns the domain and
+  measurably forgets, so Exp 1 has a real tradeoff to mitigate. Also budgets Exp 1's runtime.
+- [`exp-mixing-unit.md`](exp-mixing-unit.md) — methods control: corpus mixing by **token budget vs
+  row count** (rows differ wildly in length, so nominal ratios ≠ token ratios). Decides Exp 1's unit.
+- [`exp1-forgetting-replay.md`](exp1-forgetting-replay.md) — **Experiment 1** (the headline test):
+  single-generation catastrophic-forgetting & generative-replay study on a medical domain
+  (Qwen3.5-4B **instruct**, LoRA continued-LM). 5 corpus-mix conditions (domain-only … synthetic-only)
+  vs. the base model; forgetting on the general battery, domain gain via held-out perplexity + medical
+  QA; synthetic via chat-template generation (no seeding). Runs after Exp 0.
 
 ## How this maps to the repo
 

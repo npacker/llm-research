@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import random
 
-PREFIX_MODES = ("none", "structural", "snippet", "variable")
+PREFIX_MODES = ("none", "structural", "snippet", "variable", "chat")
 
 # A light structural scaffold for P2 (format markers only, no real content).
 _STRUCTURAL_PREFIX = "### Document\n\n"
@@ -26,6 +26,14 @@ def _word_prefix(text: str, frac: float) -> str:
     return " ".join(words[:k])
 
 
+# Default user turn for `chat` mode — generic, no real-data seeding; diversity comes from
+# per-sample sampling (temperature/EDT + per-request seeds), not from a corpus.
+DEFAULT_CHAT_PROMPT = (
+    "Write a detailed, self-contained, factual passage on a topic of general knowledge. "
+    "Choose a different topic each time and do not repeat yourself."
+)
+
+
 def build_prompts(
     seed_texts: list[str],
     mode: str = "structural",
@@ -33,16 +41,19 @@ def build_prompts(
     *,
     snippet_frac: float = 0.5,
     variable_fracs: tuple[float, ...] = (0.1, 0.25, 0.5),
+    chat_prompt: str | None = None,
     seed: int = 0,
 ) -> list[dict]:
-    """Construct `n` prompts from `seed_texts` under one prefix condition.
+    """Construct `n` prompts under one prefix condition.
 
     Modes:
-      - ``none``       (P1): empty prompt — pure unconditioned generation.
+      - ``none``       (P1): empty prompt — pure unconditioned continuation.
       - ``structural`` (P2): format markers only, no real content.
       - ``snippet``    (P3): the first `snippet_frac` of a real seed doc.
-      - ``variable``   (P4): a snippet whose length is sampled from `variable_fracs`
-                              (curriculum-style varied prefix length).
+      - ``variable``   (P4): a snippet whose length is sampled from `variable_fracs`.
+      - ``chat``       : a generic chat user-turn, **no corpus seeding** — for generative
+                         replay from an instruct model (the generator applies the chat
+                         template; diversity comes from per-sample sampling).
     """
     if mode not in PREFIX_MODES:
         raise ValueError(f"mode must be one of {PREFIX_MODES}, got {mode!r}")
@@ -50,7 +61,7 @@ def build_prompts(
         raise ValueError(f"mode {mode!r} needs a non-empty seed corpus")
 
     rng = random.Random(seed)
-    count = n if n is not None else len(seed_texts)
+    count = n if n is not None else (len(seed_texts) if seed_texts else 0)
     records: list[dict] = []
     for i in range(count):
         idx = i % len(seed_texts) if seed_texts else -1
@@ -58,6 +69,8 @@ def build_prompts(
             prompt = ""
         elif mode == "structural":
             prompt = _STRUCTURAL_PREFIX
+        elif mode == "chat":
+            prompt = chat_prompt or DEFAULT_CHAT_PROMPT
         elif mode == "snippet":
             prompt = _word_prefix(seed_texts[idx], snippet_frac)
         else:  # variable
