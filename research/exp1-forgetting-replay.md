@@ -61,7 +61,7 @@ All are corpus mixes (configs in [`../configs/train/`](../configs/train/)); the 
   base+adapter on a disjoint `MedRAG/textbooks` slice), computed automatically by `train.py` into
   `meta.json`. Negative delta = learned the domain.
 - **Domain transfer (secondary):** medical QA battery [`../configs/eval/medical.yaml`](../configs/eval/medical.yaml)
-  (MedQA / PubMedQA / MedMCQA / MMLU-medical) — expected to move less than perplexity.
+  (MedQA + MMLU-medical subsets) — expected to move less than perplexity.
 - **(Optional) replay-corpus quality:** the synthetic corpus's distribution/diversity vs. real via
   [`../scripts/diversity.py`](../scripts/diversity.py).
 

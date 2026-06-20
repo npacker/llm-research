@@ -1,13 +1,18 @@
-# Domain-gain battery (medical) for scripts/evaluate.py — pairs with the general
-# canary/full batteries to separate domain gain from general forgetting.
+# Domain-gain battery (medical) for scripts/evaluate.py — the secondary "transfer" check
+# alongside held-out medical perplexity (the primary domain metric).
+#
+# NOTE: pubmedqa and medmcqa are intentionally excluded — both break under datasets 5.0.0:
+# pubmedqa loads via a removed dataset *script* ("Dataset scripts are no longer supported");
+# medmcqa uses a bare 'medmcqa' HF id that current huggingface_hub rejects (needs
+# namespace/name). The tasks below all load cleanly (verified on Qwen3.5-4B).
 name: medical
 tasks:
   - medqa_4options
-  - pubmedqa
-  - medmcqa
   - mmlu_clinical_knowledge
   - mmlu_professional_medicine
   - mmlu_college_medicine
+  - mmlu_medical_genetics
+  - mmlu_anatomy
 num_fewshot: null
 apply_chat_template: true
 batch_size: auto
