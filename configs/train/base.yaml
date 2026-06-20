@@ -1,6 +1,6 @@
 # Reference defaults for training configs (not run directly). The per-condition configs
 # only set `name` + `corpora`; `lora`/`training` fall back to the defaults in
-# src/llm_replay/training/sft.py (shown here for reference / to override).
+# src/llm_core/training/sft.py (shown here for reference / to override).
 #
 # Conditions are corpus mixes (roles: domain | general | synthetic). A `synthetic` role
 # with `spec: null` must be filled at run time via `--synthetic <spec>`.

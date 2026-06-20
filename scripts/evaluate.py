@@ -19,7 +19,7 @@ Same, but against an already-running ``vllm serve`` endpoint (OpenAI-compatible)
         --backend local-completions \
         --model Qwen/Qwen2.5-7B-Instruct --base-url http://localhost:8000/v1/completions
 
-Quick smoke test (2 items/task, no GPU work beyond model load)::
+Quick partial run (2 items/task, no GPU work beyond model load)::
 
     python scripts/evaluate.py --config configs/eval/canary.yaml \
         --model <id> --limit 2
@@ -36,6 +36,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import yaml
+
+from llm_core.evaluation import summarize
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RUNS_DIR = REPO_ROOT / "runs"
@@ -87,7 +89,7 @@ def parse_args() -> argparse.Namespace:
         "--limit",
         type=int,
         default=None,
-        help="Limit items per task (smoke tests only — not for real runs)",
+        help="Limit items per task for a quick partial run (omit for the full battery)",
     )
     p.add_argument(
         "--num-fewshot",
@@ -125,12 +127,17 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def build_model_args(args: argparse.Namespace, extra: dict | None = None) -> dict:
+def lm_eval_model_args(
+    args: argparse.Namespace,
+    profile_args: dict | None = None,
+    extra: dict | None = None,
+) -> dict:
     """Assemble the lm-eval ``model_args`` dict for the chosen backend.
 
-    ``extra`` (from the config's ``model_args:`` block) is merged on top, so a
-    config can set e.g. ``enable_thinking: false`` / ``think_end_token: </think>``
-    for reasoning models without changing this script.
+    Merge order (later wins): backend defaults → ``profile_args`` (policy derived from
+    the model's detected capabilities, e.g. ``enable_thinking: false`` for a reasoning
+    model) → ``extra`` (the config's ``model_args:`` block). So configs only need to
+    spell out *non-default* overrides; the profile supplies the rest.
     """
     if args.backend == "hf":
         base = {"pretrained": args.model, "dtype": "bfloat16"}
@@ -161,29 +168,11 @@ def build_model_args(args: argparse.Namespace, extra: dict | None = None) -> dic
             "num_concurrent": 8,
             "tokenizer": args.model,
         }
+    if profile_args:
+        base.update(profile_args)
     if extra:
         base.update(extra)
     return base
-
-
-def summarize(results: dict) -> list[tuple[str, str, float]]:
-    """Flatten lm-eval results into (task, metric, value) rows for primary metrics.
-
-    lm-eval metric keys are ``"<metric>,<filter>"`` (e.g. ``exact_match,strict-match``
-    for gsm8k, ``prompt_level_strict_acc,none`` for ifeval). We keep every numeric,
-    non-stderr metric and label it with its filter when it isn't the trivial ``none``.
-    """
-    rows: list[tuple[str, str, float]] = []
-    for task, metrics in sorted(results.get("results", {}).items()):
-        for key, val in metrics.items():
-            if not isinstance(val, (int, float)) or "," not in key:
-                continue  # skips `alias` (str) and `sample_len` (no filter)
-            metric, _, flt = key.partition(",")
-            if metric.endswith("_stderr"):
-                continue
-            label = metric if flt in ("none", "") else f"{metric} ({flt})"
-            rows.append((task, label, float(val)))
-    return rows
 
 
 def main() -> None:
@@ -197,6 +186,8 @@ def main() -> None:
     # Imported here so --help works without importing torch/vllm.
     import lm_eval
 
+    from llm_core.models import resolve_profile
+
     # Register custom task YAMLs (e.g. SuperGPQA) when an include path is given.
     task_manager = None
     if args.include_path:
@@ -204,7 +195,16 @@ def main() -> None:
 
         task_manager = TaskManager(include_path=str(args.include_path))
 
-    model_args = build_model_args(args, cfg.get("model_args"))
+    # Auto-detect arch capabilities (loads config/tokenizer, not weights); a config
+    # `model:` block overrides. Supplies the thinking-off policy + chat-template default
+    # so eval configs only spell out non-default overrides.
+    profile = resolve_profile(args.model, overrides=cfg.get("model"))
+    model_args = lm_eval_model_args(
+        args, profile.eval_model_args(), cfg.get("model_args")
+    )
+    apply_chat = cfg.get("apply_chat_template")
+    if apply_chat is None:
+        apply_chat = profile.has_chat_template
     print(
         f"[evaluate] config={cfg['name']} gen={args.generation} backend={args.backend}"
     )
@@ -218,7 +218,7 @@ def main() -> None:
         num_fewshot=num_fewshot,
         batch_size=cfg.get("batch_size", "auto"),
         limit=args.limit,
-        apply_chat_template=cfg.get("apply_chat_template", False),
+        apply_chat_template=apply_chat,
         gen_kwargs=cfg.get("gen_kwargs"),
         task_manager=task_manager,
     )

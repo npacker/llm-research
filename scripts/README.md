@@ -1,7 +1,8 @@
 # `scripts/` — CLI entrypoints
 
-Command-line entrypoints that wrap [`../src/llm_replay/`](../src/llm_replay/) for the common
-verbs of the research workflow:
+Command-line entrypoints that wrap [`../src/llm_core/`](../src/llm_core/) (general infra) and
+[`../src/llm_replay/`](../src/llm_replay/) (research layer) for the common verbs of the research
+workflow:
 
 - **`evaluate.py`** — capability/regression battery via lm-evaluation-harness — **built**
 - **`diversity.py`** — distribution/diversity metrics over corpora (collapse axis) — **built**
@@ -14,7 +15,7 @@ verbs of the research workflow:
 ## `train.py` / `forgetting_report.py` — LoRA fine-tuning + forgetting study
 
 LoRA continued-LM fine-tuning over domain/general/synthetic corpus mixes; logic in
-[`../src/llm_replay/training/`](../src/llm_replay/training/) (see its README for the condition matrix).
+[`../src/llm_core/training/`](../src/llm_core/training/) (the condition matrix lives in [`../research/exp1-forgetting-replay.md`](../research/exp1-forgetting-replay.md)).
 `train.py` also auto-reports **held-out domain perplexity** (base vs base+adapter) into `meta.json` —
 the objective-matched domain-learning signal; the medical battery is the secondary transfer check.
 
@@ -34,7 +35,9 @@ avoiding a merge. `train.py --merge` also writes a standalone merged checkpoint 
 ## `generate.py` / `validate.py` — generation + quality validation
 
 EDT synthetic-data generation (research plan Area 1) and a validation pipeline; logic in
-[`../src/llm_replay/generation/`](../src/llm_replay/generation/) (see its README).
+[`../src/llm_core/generation/`](../src/llm_core/generation/) (EDT temperature + vLLM generator)
+and [`../src/llm_replay/generation/`](../src/llm_replay/generation/) (prefix prompts + validation;
+see its README).
 
 ```sh
 # Generate (strategy comes from the config: fixed | seq_edt | token_edt)
@@ -69,7 +72,7 @@ python scripts/evaluate.py --config configs/eval/full.yaml --model <id-or-path> 
 python scripts/evaluate.py --config configs/eval/canary.yaml --backend local-completions \
     --model <id> --base-url http://localhost:8000/v1/completions
 
-# Smoke test (2 items/task)
+# Quick partial run (2 items/task)
 python scripts/evaluate.py --config configs/eval/canary.yaml --model <id> --limit 2
 ```
 
@@ -85,7 +88,7 @@ own separate harnesses (Docker / time-windowed) and should be run as dedicated m
 The corpus-vs-corpus complement to `evaluate.py`: where `evaluate.py` scores model
 *capability*, this measures the *distribution/diversity* axis that detects collapse directly
 (the **primary** Area-5 signal). Compares a synthetic corpus against an optional real/Gen-0
-reference (logic in [`../src/llm_replay/metrics/diversity.py`](../src/llm_replay/metrics/diversity.py)).
+reference (logic in [`../src/llm_core/metrics/diversity.py`](../src/llm_core/metrics/diversity.py)).
 
 ```sh
 # Full panel: synthetic vs real/Gen-0 reference

@@ -20,7 +20,7 @@ Substitution (synthetic stands in for general); fill the synthetic role::
     python scripts/train.py --config configs/train/domain_synthetic.yaml --model Qwen/Qwen3.5-4B \
         --synthetic runs/gen1_token_edt_<ts>/clean.jsonl
 
-Smoke (tiny)::
+Quick partial / pilot run (tiny)::
 
     python scripts/train.py --config configs/train/domain_only.yaml --model Qwen/Qwen3.5-4B --limit 64
 
@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,7 +38,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RUNS_DIR = REPO_ROOT / "runs"
-sys.path.insert(0, str(REPO_ROOT / "src"))  # package not installed (package = false)
 
 
 def parse_args() -> argparse.Namespace:
@@ -64,7 +62,10 @@ def parse_args() -> argparse.Namespace:
         "--num-samples", type=int, default=None, help="Override config total_samples"
     )
     p.add_argument(
-        "--limit", type=int, default=None, help="Cap total_samples (smoke tests)"
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap total_samples for a quick partial / pilot run",
     )
     p.add_argument(
         "--output-dir",
@@ -75,7 +76,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--merge",
         action="store_true",
-        help="Also save a standalone merged checkpoint (HF/portability; vLLM can't load merged Qwen3.5)",
+        help="Also save a standalone merged checkpoint (HF/portability; vLLM may not load a merged VLM base)",
     )
     p.add_argument(
         "--heldout-n",
@@ -107,8 +108,9 @@ def main() -> None:
             c["spec"] = args.synthetic
 
     # Deferred so --help works without torch.
-    from llm_replay import corpus
-    from llm_replay.training import data, sft
+    from llm_core import corpus
+    from llm_core.models import resolve_profile
+    from llm_core.training import data, sft
 
     mixed, role_counts = data.mix_corpora(
         corpora, total_samples=total, seed=cfg.get("seed", 0)
@@ -122,6 +124,9 @@ def main() -> None:
     out_dir = args.output_dir or (DEFAULT_RUNS_DIR / f"train_{cfg['name']}_{stamp}")
     out_dir.mkdir(parents=True, exist_ok=True)
 
+    # Auto-detect arch capabilities (LoRA targets / merge caveat); config `model:` overrides.
+    profile = resolve_profile(args.model, overrides=cfg.get("model"))
+
     summary = sft.train_lora(
         args.model,
         mixed,
@@ -130,6 +135,7 @@ def main() -> None:
         max_len=cfg.get("max_len", 1024),
         output_dir=out_dir,
         merge=args.merge,
+        profile=profile,
     )
     summary.update(
         {"config": cfg, "model": args.model, "mix": role_counts, "n": len(mixed)}
@@ -177,7 +183,7 @@ def main() -> None:
     )
     print(f"[train] adapter -> {summary['adapter_dir']}")
     # Eval the BASE model + adapter via vLLM (base keeps its own config → vLLM-loadable
-    # + fast kernels for Qwen3.5's linear attention; no merge needed).
+    # with the arch's native kernels; no merge needed).
     print(
         f"[train] next: python scripts/evaluate.py --model {args.model} --backend vllm "
         f"--lora {summary['adapter_dir']} --lora-rank {summary['lora_rank']} "

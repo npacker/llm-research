@@ -1,14 +1,12 @@
-"""Distribution / diversity metrics for the model-collapse axis.
+"""Distribution / diversity metrics over text corpora.
 
-These compare *corpora* (e.g. generation-N synthetic vs. generation-0 / real text)
-rather than scoring a model on tasks — the primary collapse signal in the research
-plan's Area 5. Split into:
+These compare *corpora* (one corpus, or a candidate against a reference) rather than
+scoring a model on tasks. Split into:
 
-- **reference-free** (one corpus): diversity that should *decline* as a model
-  collapses — Distinct-n, Self-BLEU, Vendi score, vocabulary size, tail mass.
-- **reference-based** (synthetic vs. a real/Gen-0 reference): distance that should
-  *grow* — MAUVE, precision/recall + density/coverage (prdc), Fréchet embedding
-  distance, RBF-MMD, unigram-KL.
+- **reference-free** (one corpus): Distinct-n, Self-BLEU, Vendi score, vocabulary
+  size, tail mass.
+- **reference-based** (candidate vs. a reference corpus): MAUVE, precision/recall +
+  density/coverage (prdc), Fréchet embedding distance, RBF-MMD, unigram-KL.
 
 Heavy imports (sentence-transformers, mauve, prdc, torch) are deferred into the
 functions so importing this module stays cheap.

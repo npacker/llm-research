@@ -29,37 +29,12 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+from llm_core.corpus import load_corpus
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))  # package not installed (package = false)
-
-
-def load_corpus(spec: str, text_field: str | None, limit: int | None) -> list[str]:
-    if spec.startswith("hf:"):
-        _, dataset, split, field = spec.split(":", 3)
-        from datasets import load_dataset
-
-        ds = load_dataset(dataset, split=split)
-        if limit:  # slice before reading the column so we don't materialise it all
-            ds = ds.select(range(min(limit, len(ds))))
-        texts = ds[field]
-    else:
-        path = Path(spec)
-        if path.suffix == ".jsonl":
-            if not text_field:
-                raise SystemExit("--text-field is required for .jsonl corpora")
-            texts = [
-                json.loads(line)[text_field]
-                for line in path.read_text().splitlines()
-                if line.strip()
-            ]
-        else:  # .txt, one text per line
-            texts = path.read_text().splitlines()
-    texts = [t for t in texts if t and t.strip()]
-    return texts[:limit] if limit else texts
 
 
 def parse_args() -> argparse.Namespace:
@@ -102,7 +77,7 @@ def _flatten(panel: dict, prefix: str = "") -> list[tuple[str, object]]:
 
 def main() -> None:
     args = parse_args()
-    from llm_replay.metrics import diversity
+    from llm_core.metrics import diversity
 
     synth = load_corpus(args.synthetic, args.text_field, args.limit)
     if not synth:

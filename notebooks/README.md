@@ -7,7 +7,8 @@ Jupyter notebooks for interactive exploration, ad-hoc analysis, and paper figure
 Guidelines:
 
 - Notebooks are for exploration and visualization — promote any reusable logic into
-  [`../src/llm_replay/`](../src/llm_replay/) so it can be tested and shared.
+  [`../src/llm_core/`](../src/llm_core/) (or [`../src/llm_replay/`](../src/llm_replay/) if it's
+  research-specific) so it can be tested and shared.
 - Heavy outputs (generated corpora, checkpoints) belong in [`../runs/`](../runs/) /
   [`../data/`](../data/), not committed inside notebooks.
 - Consider pairing notebooks with `jupytext` `.py` files for clean diffs if review matters.

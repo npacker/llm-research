@@ -17,24 +17,15 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from pathlib import Path
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(REPO_ROOT / "src"))
+from llm_core.evaluation import summarize
 
 
 def _flatten(results_json: Path) -> dict[str, float]:
-    """task -> primary metric value, reusing evaluate.py's summarize()."""
-    import importlib.util
-
-    spec = importlib.util.spec_from_file_location(
-        "ev", REPO_ROOT / "scripts" / "evaluate.py"
-    )
-    ev = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(ev)
+    """task -> primary metric value, reusing the package's summarize()."""
     r = json.loads(Path(results_json).read_text())
-    return {f"{t}/{m}": v for t, m, v in ev.summarize(r)}
+    return {f"{t}/{m}": v for t, m, v in summarize(r)}
 
 
 def parse_args() -> argparse.Namespace:

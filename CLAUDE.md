@@ -6,21 +6,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 A GPU research workspace for LLM inference/experimentation on the **vLLM + HuggingFace** stack, oriented around a research program on dynamic-temperature generative replay & model collapse (see [`research/`](research/)).
 
-It remains environment-first (a pinned dependency set + CUDA devcontainer; `[tool.uv] package = false`), but it now carries a working **evaluation toolkit**:
+It remains environment-first (a pinned dependency set + CUDA devcontainer), but it now carries a working **evaluation toolkit** and is installed as two editable packages: **`llm_core`** (general, reusable LLM infra — model profiles, eval glue, corpus loading, diversity metrics, EDT generation, LoRA training) and **`llm_replay`** (the research layer on top — prefix-prompt construction + synthetic-corpus quality validation for the generative-replay study):
 
 - `scripts/evaluate.py` — capability/regression battery via **lm-evaluation-harness** (the "is the model still capable?" axis).
-- `scripts/diversity.py` + `src/llm_replay/metrics/diversity.py` — corpus-vs-corpus **distribution/diversity** metrics (the model-collapse axis: MAUVE, Vendi, prdc, Self-BLEU, …).
-- `scripts/generate.py` + `src/llm_replay/generation/` — **EDT synthetic-data generation** (fixed / sequence-level / token-level EDT + prefix-only prompts; vLLM).
-- `scripts/validate.py` — **quality validation** of a generated corpus (per-sample gates + perplexity + diversity panel).
-- `scripts/train.py` + `src/llm_replay/training/` — **LoRA fine-tuning** over domain/general/synthetic corpus mixes (forgetting/replay study); `scripts/forgetting_report.py` tabulates base-vs-condition deltas.
+- `scripts/diversity.py` + `src/llm_core/metrics/diversity.py` — corpus-vs-corpus **distribution/diversity** metrics (the model-collapse axis: MAUVE, Vendi, prdc, Self-BLEU, …).
+- `scripts/generate.py` + `src/llm_core/generation/` (EDT temperature + vLLM generator) + `src/llm_replay/generation/prompts.py` (prefix-only prompts) — **EDT synthetic-data generation** (fixed / sequence-level / token-level EDT; vLLM).
+- `scripts/validate.py` + `src/llm_replay/generation/validation.py` — **quality validation** of a generated corpus (per-sample gates + perplexity + diversity panel).
+- `scripts/train.py` + `src/llm_core/training/` — **LoRA fine-tuning** over domain/general/synthetic corpus mixes (forgetting/replay study); `scripts/forgetting_report.py` tabulates base-vs-condition deltas.
 - `eval_tasks/` — custom lm-eval tasks not shipped upstream (**SuperGPQA**, **IFBench**), loaded via `--include-path`.
 - `configs/eval/`, `configs/gen/`, `configs/validate/`, `configs/train/` — declarative eval / generation / validation / training configs.
 
+The repo **is** installed as editable packages via a hatchling build backend
+(`[tool.hatch.build.targets.wheel] packages = ["src/llm_core", "src/llm_replay"]`); `uv sync` installs
+both, so scripts and tests `import llm_core…` / `import llm_replay…` directly (no `sys.path` shims).
+Intra-package imports are relative (`from ..corpus import …`); `llm_replay` reaches general code via
+absolute `from llm_core… import …`; scripts use absolute imports. A CPU-only, no-network `pytest`
+suite lives in [`tests/`](tests/) (run `pytest tests/`); the heavier embedding/MAUVE/GPU paths are
+still validated by manual GPU runs.
+
 **Not built yet:** the **recursive** multi-generation collapse loop (chaining
-generate→validate→train across generations); single-generation training now exists. Also no formal
-`pytest` suite — numeric code is currently validated by smoke runs. `src/` is imported via `sys.path`
-(the repo is **not** installed as a package), so scripts add `src/` to the path rather than relying
-on an install.
+generate→validate→train across generations); single-generation training now exists.
 
 ## Environment & dependency management (uv)
 
@@ -78,14 +83,18 @@ and [`eval_tasks/README.md`](eval_tasks/README.md) for details.
 
 ### Evaluation & training procedures (verified the hard way — don't skip)
 
-- **Reasoning models (Qwen3.x): keep `enable_thinking: false` in eval configs.** Left on, the model
-  emits a thinking preamble that overruns answer-extraction tasks' token budget — e.g. GSM8K scored
-  **0.00 with thinking on vs 0.60 off** on the same checkpoint. All `configs/eval/*.yaml` set it; keep it.
-  (`scripts/evaluate.py` threads it to both the `hf` and `vllm` backends.)
+- **Reasoning models: thinking is auto-disabled for evals by `src/llm_core/models.py`.** Left on, the
+  model emits a thinking preamble that overruns answer-extraction tasks' token budget — e.g. GSM8K scored
+  **0.00 with thinking on vs 0.60 off** on the same checkpoint. The model profile detects the thinking
+  toggle and supplies `enable_thinking: false` (and the chat-template default) automatically, so eval
+  configs no longer hardcode it — set `model_args: {enable_thinking: true}` in a config only to force a
+  thinking run. (`scripts/evaluate.py` merges the profile's args under the config's, threaded to the
+  `hf`/`vllm` backends.)
 - **Evaluate a fine-tuned model as base + LoRA adapter via vLLM**, not a merged checkpoint:
   `python scripts/evaluate.py --model <base> --backend vllm --lora runs/train_*/adapter --lora-rank <r> --config configs/eval/canary.yaml`.
   Qwen3.5 is a **VLM**; `train.py`'s default merge is text-only (`Qwen3_5ForCausalLM`), a sub-arch vLLM
-  doesn't register, so vLLM can't load it. `train.py --merge` is for HF/portability — eval it with `--backend hf`.
+  doesn't register, so vLLM can't load it. `train.py --merge` warns generically when the base is a VLM
+  (`profile.is_vlm`) — eval the merged checkpoint with `--backend hf`.
 - **HF backend `batch_size: auto` can thrash on WSL** (the GPU memory budget is over-reported), turning a
   ~2-min eval into ~17 min of batch probing. Use a fixed `batch_size` with `--backend hf`, or prefer vLLM at scale.
 - The HF backend **does** run on the GPU (`HFLM` defaults to `cuda`); it's a valid backend, just slower than

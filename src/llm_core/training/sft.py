@@ -1,17 +1,23 @@
 """LoRA continued-LM fine-tuning (transformers Trainer + peft) — single GPU.
 
-`train_lora` loads a base model, attaches a LoRA adapter, trains on a tokenised raw-text
-dataset with causal-LM loss, then **merges the adapter into the base** and saves the merged
-model (so the existing `scripts/evaluate.py` can score it unchanged). `trl` is not installed;
-this uses transformers `Trainer` directly.
+`train_lora` loads a base model, attaches a LoRA adapter, and trains on a tokenised
+raw-text dataset with causal-LM loss; it saves the adapter (and, optionally, a merged
+checkpoint). The LoRA target modules and the merged-checkpoint caveat are derived from
+the model `profile` (auto-detected), not hardcoded per architecture. `trl` is not
+installed; this uses transformers `Trainer` directly.
 """
 
 from __future__ import annotations
 
+import warnings
 from pathlib import Path
 
+from ..models import ModelProfile
 
-def build_lora_config(cfg: dict):
+
+def build_lora_config(
+    cfg: dict, default_target_modules: str | list[str] = "all-linear"
+):
     from peft import LoraConfig
 
     return LoraConfig(
@@ -19,7 +25,7 @@ def build_lora_config(cfg: dict):
         lora_alpha=cfg.get("lora_alpha", 32),
         lora_dropout=cfg.get("lora_dropout", 0.05),
         bias="none",
-        target_modules=cfg.get("target_modules", "all-linear"),
+        target_modules=cfg.get("target_modules", default_target_modules),
         task_type="CAUSAL_LM",
     )
 
@@ -54,14 +60,17 @@ def train_lora(
     max_len: int,
     output_dir: Path,
     merge: bool = False,
+    profile: ModelProfile | None = None,
 ) -> dict:
     """Train a LoRA adapter; save it to ``output_dir/'adapter'``.
 
     The adapter (not a merged model) is the default output: it's tiny and lets the
     eval reuse the base model's own config (so vLLM loads it via ``lora_local_path``).
-    Pass ``merge=True`` to also write a standalone merged checkpoint (``output_dir/'merged'``;
-    note vLLM can't load merged Qwen3.5 — its config becomes text-only — so merged is for
-    HF/portability only). Returns a summary dict.
+    Pass ``merge=True`` to also write a standalone merged checkpoint (``output_dir/'merged'``).
+    For a VLM base (``profile.is_vlm``), merging produces a text-only sub-arch that vLLM
+    may not register — so the merged checkpoint is for HF/portability, not vLLM. The LoRA
+    target modules default to ``profile.lora_target_modules`` (config can override).
+    Returns a summary dict.
     """
     from transformers import (
         AutoModelForCausalLM,
@@ -73,6 +82,8 @@ def train_lora(
 
     from .data import tokenize_for_lm
 
+    profile = profile or ModelProfile()
+
     tokenizer = AutoTokenizer.from_pretrained(model_id)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
@@ -81,7 +92,9 @@ def train_lora(
     targs = build_training_args(output_dir, train_cfg)
     if targs.gradient_checkpointing:
         model.enable_input_require_grads()  # needed for grad-checkpointing + LoRA
-    model = get_peft_model(model, build_lora_config(lora_cfg))
+    model = get_peft_model(
+        model, build_lora_config(lora_cfg, profile.lora_target_modules)
+    )
     trainable, total = model.get_nb_trainable_parameters()
 
     tok_ds = tokenize_for_lm(mixed_dataset, tokenizer, max_len)
@@ -105,6 +118,13 @@ def train_lora(
         "lora_rank": int(lora_cfg.get("r", 16)),
     }
     if merge:
+        if profile.is_vlm:
+            warnings.warn(
+                "Merging a LoRA into a VLM base produces a text-only sub-architecture "
+                "that vLLM may not register — eval the merged checkpoint with the HF "
+                "backend, or eval base + adapter (lora_local_path) on vLLM instead.",
+                stacklevel=2,
+            )
         merged_dir = output_dir / "merged"
         model.merge_and_unload().save_pretrained(merged_dir)
         tokenizer.save_pretrained(merged_dir)

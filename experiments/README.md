@@ -15,14 +15,16 @@ experiments/
 ```
 
 Each runner should stay **thin**: load a config from [`../configs/`](../configs/), call into
-[`../src/llm_replay/`](../src/llm_replay/) for generation / training / metrics, and write
+[`../src/llm_core/`](../src/llm_core/) (generation / training / metrics) and
+[`../src/llm_replay/`](../src/llm_replay/) (prompts / validation), and write
 artifacts to [`../runs/`](../runs/) (gitignored). Track runs with **wandb** (already a
 dependency) so collapse trajectories and metric curves are logged centrally.
 
 Start every study **pilot-first** (1–3B model, few generations, small sample counts) before
 scaling — see the single-GPU feasibility note in the research doc.
 
-**Status: nothing built here yet** — these runners depend on the generation / recursive-training
-pipeline (`src/llm_replay/generation`, `training`), which doesn't exist. What *does* exist for the
-runners to call once that lands: the capability eval ([`../scripts/evaluate.py`](../scripts/evaluate.py))
+**Status: nothing built here yet** — these runners depend on the *recursive* generate→train
+pipeline (chaining `src/llm_core/generation` + `src/llm_replay/generation` → `src/llm_core/training`
+across generations), which doesn't exist yet. What *does* exist for the runners to call once that
+lands: the capability eval ([`../scripts/evaluate.py`](../scripts/evaluate.py))
 and the collapse-axis diversity metrics ([`../scripts/diversity.py`](../scripts/diversity.py)).

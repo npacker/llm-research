@@ -1,6 +1,6 @@
 # Experiment 1 — Catastrophic forgetting & generative replay (medical, single generation)
 
-**Status:** tooling built and pipeline-validated on tiny smokes; full run pending.
+**Status:** tooling built and pipeline-validated on tiny pilot runs; full run pending.
 **Scope:** one generation (base → fine-tune → measure). First rung toward the recursive
 collapse loop in [`dynamic-temperature-generative-replay.md`](dynamic-temperature-generative-replay.md)
 (Areas 2 & 5).
@@ -51,7 +51,7 @@ All are corpus mixes (configs in [`../configs/train/`](../configs/train/)); the 
   [`../scripts/validate.py`](../scripts/validate.py); the `clean.jsonl` is the synthetic spec.
   *(Generator strategy — `token_edt` vs `fixed` vs `seq_edt` — is a follow-up knob.)*
 - **Training:** LoRA (`target_modules: all-linear`) continued-LM; LR/epochs/scale from Exp 0.
-  Defaults in [`../src/llm_replay/training/sft.py`](../src/llm_replay/training/sft.py).
+  Defaults in [`../src/llm_core/training/sft.py`](../src/llm_core/training/sft.py).
 
 ## Metrics
 - **Forgetting (primary axis):** general capability battery via
@@ -111,7 +111,7 @@ python scripts/forgetting_report.py --base base=runs/genbase_canary_*/eval/resul
 - **Domain metric = held-out perplexity (objective-matched)**; the QA battery is a transfer check.
   No dataset change needed for the prose/QA "mismatch" (see training/README).
 - **Single GPU**, `tensor_parallel_size=1`; pilot-first (`--limit`) before the full `total_samples=10000`.
-- Pipeline validated on tiny smokes (loss ~1.83; held-out medical ppl 6.63→6.26; base+adapter GSM8K
+- Pipeline validated on tiny pilot runs (loss ~1.83; held-out medical ppl 6.63→6.26; base+adapter GSM8K
   ~0.78) — these are plumbing checks, **not** results.
 
 ## Next

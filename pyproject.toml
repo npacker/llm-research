@@ -67,12 +67,18 @@ dependencies = [
     "vendi-score",
     "prdc",
     "sentence-transformers",
+
+    # --- Test suite (CPU-only, no network) ---------------------------------
+    # Unpinned on purpose (frozen by uv.lock); pure-Python, no torch/vllm ABI impact.
+    "pytest",
 ]
 
-[tool.uv]
-# Virtual project: install the dependencies but don't try to build/install this
-# repo as a package (no build backend needed for a research workspace).
-package = false
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_core", "src/llm_replay"]
 
 # --- PyTorch CUDA 13.0 index (must match torch 2.11.0 / vLLM's CUDA major) ---
 # `explicit = true` means this index is used ONLY for the packages mapped in

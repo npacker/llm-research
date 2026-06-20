@@ -12,7 +12,7 @@ Token-level EDT, 1000 samples::
     python scripts/generate.py --config configs/gen/token_edt.yaml \
         --model Qwen/Qwen3.5-0.8B --generation 1
 
-Smoke test (20 samples)::
+Quick partial run (20 samples)::
 
     python scripts/generate.py --config configs/gen/fixed.yaml \
         --model Qwen/Qwen3.5-0.8B --limit 20
@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -32,7 +31,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RUNS_DIR = REPO_ROOT / "runs"
-sys.path.insert(0, str(REPO_ROOT / "src"))  # package not installed (package = false)
 
 
 def parse_args() -> argparse.Namespace:
@@ -55,7 +53,7 @@ def parse_args() -> argparse.Namespace:
         "--num-samples", type=int, default=None, help="Override config's num_samples"
     )
     p.add_argument(
-        "--limit", type=int, default=None, help="Cap samples (smoke tests only)"
+        "--limit", type=int, default=None, help="Cap samples for a quick partial run"
     )
     p.add_argument(
         "--seed-corpus",
@@ -81,8 +79,10 @@ def main() -> None:
     num_samples = args.limit or args.num_samples or cfg.get("num_samples", 1000)
 
     # Deferred so --help works without torch/vllm.
-    from llm_replay import corpus
-    from llm_replay.generation import generator, prompts
+    from llm_core import corpus
+    from llm_core.generation import generator
+    from llm_core.models import resolve_profile
+    from llm_replay.generation import prompts
 
     seed_spec = args.seed_corpus or cfg.get("seed_corpus")
     seed_texts: list[str] = []
@@ -111,6 +111,9 @@ def main() -> None:
         args.max_model_len,
         cfg.get("model_args"),
     )
+    # Auto-detect arch capabilities (chat template / thinking toggle); a config
+    # `model:` block overrides. Drives chat-template rendering in the generator.
+    profile = resolve_profile(args.model, overrides=cfg.get("model"))
     print(f"[generate] config={cfg['name']} gen={args.generation} strategy={strategy}")
     print(
         f"[generate] model={args.model} prefix={prefix['mode']} n={len(prompt_records)}"
@@ -125,7 +128,8 @@ def main() -> None:
         gen_kwargs=cfg.get("sampling", {}),
         edt=cfg.get("edt"),
         seq_edt=cfg.get("seq_edt"),
-        apply_chat_template=cfg.get("apply_chat_template", False),
+        apply_chat_template=cfg.get("apply_chat_template"),
+        profile=profile,
     )
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

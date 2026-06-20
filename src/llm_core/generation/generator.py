@@ -1,17 +1,18 @@
-"""vLLM-backed synthetic-data generation for the three core EDT strategies.
+"""vLLM-backed text generation with three temperature strategies.
 
-Strategies (research plan Area 1):
-  - ``fixed``     : constant temperature (baseline, cond. D).
-  - ``token_edt`` : per-token EDT via `EDTLogitsProcessor` (cond. A).
-  - ``seq_edt``   : one temperature per sequence, estimated from a warmup pass (cond. B).
+Strategies:
+  - ``fixed``     : constant temperature.
+  - ``token_edt`` : per-token EDT via `EDTLogitsProcessor`.
+  - ``seq_edt``   : one temperature per sequence, estimated from a warmup pass.
 
-This is the repo's first direct vLLM use. Single GPU → ``tensor_parallel_size=1``.
+Single GPU → ``tensor_parallel_size=1``.
 """
 
 from __future__ import annotations
 
 import math
 
+from ..models import ModelProfile, profile_from
 from .temperature import EDTLogitsProcessor, edt_temperature
 
 
@@ -57,22 +58,9 @@ def _topk_entropy(logprobs_step: dict) -> float:
     return -sum(p * math.log(p) for p in probs if p > 0)
 
 
-def _render_chat(llm, texts: list[str]) -> list[str]:
-    """Wrap each user-turn in the model's chat template (no thinking) for chat-mode replay."""
-    tok = llm.get_tokenizer()
-    out = []
-    for t in texts:
-        msgs = [{"role": "user", "content": t}]
-        try:
-            r = tok.apply_chat_template(
-                msgs, add_generation_prompt=True, tokenize=False, enable_thinking=False
-            )
-        except TypeError:  # tokenizer doesn't take enable_thinking
-            r = tok.apply_chat_template(
-                msgs, add_generation_prompt=True, tokenize=False
-            )
-        out.append(r)
-    return out
+def _tokenizer_profile(llm) -> ModelProfile:
+    """Fallback profile derived from the engine's tokenizer alone (no config I/O)."""
+    return profile_from(config=None, tokenizer=llm.get_tokenizer())
 
 
 def generate(
@@ -83,19 +71,31 @@ def generate(
     gen_kwargs: dict,
     edt: dict | None = None,
     seq_edt: dict | None = None,
-    apply_chat_template: bool = False,
+    apply_chat_template: bool | None = None,
+    profile: ModelProfile | None = None,
 ) -> list[dict]:
     """Generate one continuation per prompt record; return enriched records.
 
-    With `apply_chat_template`, each prompt is wrapped in the model's chat template (for
-    `chat`-mode generative replay from an instruct model). Every request gets a distinct
+    With chat templating on, each prompt is wrapped in the model's chat template (for
+    chat-mode generation from an instruct model) via the model `profile` (which
+    knows whether the template takes ``enable_thinking``). Every request gets a distinct
     seed (base + index), so identical prompts (chat mode) still yield diverse samples.
+
+    `apply_chat_template` defaults to the profile's ``has_chat_template`` when left
+    ``None``; pass an explicit bool to force it. The `profile` is auto-detected from the
+    engine tokenizer when not supplied.
     """
     from vllm import SamplingParams
 
+    if profile is None:
+        profile = _tokenizer_profile(llm)
+    if apply_chat_template is None:
+        apply_chat_template = profile.has_chat_template
+
     texts = [p["prompt"] for p in prompts]
     if apply_chat_template:
-        texts = _render_chat(llm, texts)
+        tok = llm.get_tokenizer()
+        texts = [profile.render_chat(tok, t) for t in texts]
 
     base = dict(gen_kwargs)
     seed0 = base.pop("seed", 0) or 0

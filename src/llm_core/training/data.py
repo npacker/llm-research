@@ -1,8 +1,9 @@
 """Corpus mixing + tokenisation for continued-LM LoRA fine-tuning.
 
-`mix_corpora` builds one raw-text dataset from several corpora (domain / general /
-synthetic) at configurable row-count weights; `tokenize_for_lm` tokenises it for causal-LM
-loss. Reuses `llm_replay.corpus.load_corpus` for all corpus specs.
+`mix_corpora` builds one raw-text dataset from several corpora at configurable
+row-count weights (each tagged with a caller-supplied role); `tokenize_for_lm`
+tokenises it for causal-LM loss. Reuses `llm_core.corpus.load_corpus` for all corpus
+specs.
 """
 
 from __future__ import annotations
@@ -24,7 +25,7 @@ def mix_corpora(corpora: list[dict], total_samples: int, seed: int = 0):
         spec = c.get("spec")
         if not spec:
             raise ValueError(
-                f"corpus role {c.get('role')!r} has no spec (pass --synthetic / set it in the config)"
+                f"corpus role {c.get('role')!r} has no spec (set it in the config)"
             )
         n = max(1, int(total_samples * c["weight"]))
         texts = load_corpus(spec, c.get("text_field", "text"), limit=n)

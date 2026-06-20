@@ -29,7 +29,8 @@ Research planning documents and per-paper writeups for this workspace.
 
 ## How this maps to the repo
 
-The doc's "Shared Infrastructure" maps to [`../src/llm_replay/`](../src/llm_replay/);
+The doc's "Shared Infrastructure" maps to [`../src/llm_core/`](../src/llm_core/) (general infra)
++ [`../src/llm_replay/`](../src/llm_replay/) (research-specific prompts + validation);
 experiments live in [`../experiments/`](../experiments/) driven by
 [`../configs/`](../configs/); outputs go to [`../runs/`](../runs/) and are tracked with wandb.
 See each directory's README for conventions and the single-GPU feasibility note in the plan doc.
@@ -41,13 +42,14 @@ The doc's shared **Capability Battery** and Area-5 collapse instrumentation are 
 - **Capability axis** — [`../scripts/evaluate.py`](../scripts/evaluate.py) (lm-eval) +
   [`../eval_tasks/`](../eval_tasks/) (SuperGPQA, IFBench) + [`../configs/eval/`](../configs/eval/).
 - **Distribution/diversity axis** (primary collapse signal) —
-  [`../scripts/diversity.py`](../scripts/diversity.py) + `../src/llm_replay/metrics/diversity.py`.
+  [`../scripts/diversity.py`](../scripts/diversity.py) + `../src/llm_core/metrics/diversity.py`.
 - **Generation (Area 1/4)** — [`../scripts/generate.py`](../scripts/generate.py) +
-  [`../src/llm_replay/generation/`](../src/llm_replay/generation/): fixed / sequence-level /
-  token-level EDT + prefix-only prompts, with a quality-validation pipeline
+  [`../src/llm_core/generation/`](../src/llm_core/generation/) (EDT temperature + vLLM generator) +
+  [`../src/llm_replay/generation/prompts.py`](../src/llm_replay/generation/prompts.py): fixed /
+  sequence-level / token-level EDT + prefix-only prompts, with a quality-validation pipeline
   ([`../scripts/validate.py`](../scripts/validate.py): gates + perplexity + diversity panel).
 - **Training / forgetting study (Areas 2/5, single generation)** —
-  [`../scripts/train.py`](../scripts/train.py) + [`../src/llm_replay/training/`](../src/llm_replay/training/):
+  [`../scripts/train.py`](../scripts/train.py) + [`../src/llm_core/training/`](../src/llm_core/training/):
   LoRA fine-tuning over domain/general/synthetic mixes; forgetting measured on the general battery,
   domain gain on `configs/eval/medical.yaml`, compared via
   [`../scripts/forgetting_report.py`](../scripts/forgetting_report.py).

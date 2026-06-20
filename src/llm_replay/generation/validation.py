@@ -124,7 +124,7 @@ def validate(
         }
 
     if kept:
-        from llm_replay.metrics import diversity
+        from llm_core.metrics import diversity
 
         report["diversity"] = diversity.compute_panel(
             kept, real, embed_model=embed_model, device=device, with_mauve=with_mauve
@@ -144,8 +144,8 @@ def perplexity(
 
     Default use: coherence under a fixed reference (``model_id``, e.g. gpt2-large). With
     ``lora`` set, applies a LoRA adapter on top of ``model_id`` (base + adapter) — used to
-    score a *fine-tuned* model on held-out domain text without merging. For a VLM base like
-    Qwen3.5, ``AutoModelForCausalLM`` loads the text tower, matching how the adapter was trained.
+    score a *fine-tuned* model on held-out domain text without merging. For a VLM base,
+    ``AutoModelForCausalLM`` loads the text tower, matching how the adapter was trained.
     """
     import torch
     import torch.nn.functional as F

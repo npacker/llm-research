@@ -17,8 +17,8 @@ tasks:
   - openai_mmlu             # MMMLU (OpenAI multilingual MMLU, ~14 languages)
 
 num_fewshot: null
-apply_chat_template: true
 batch_size: auto
 
-model_args:
-  enable_thinking: false
+# Chat template + thinking mode are auto-detected from the model (src/llm_core/models.py):
+# reasoning models run thinking-off, which matches the published non-thinking targets above.
+# Override here only for non-default behaviour (e.g. force a thinking run).

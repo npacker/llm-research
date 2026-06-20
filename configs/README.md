@@ -37,7 +37,7 @@ are the Area-1 conditions.
 
 Consumed by [`scripts/train.py`](../scripts/train.py). Each condition is a `corpora` list of
 `{role, spec, weight}` (roles: domain/general/synthetic; a synthetic spec left null is filled by
-`--synthetic`); `lora`/`training` fall back to `src/llm_replay/training/sft.py` defaults
+`--synthetic`); `lora`/`training` fall back to `src/llm_core/training/sft.py` defaults
 (`base.yaml` documents them). Conditions: `domain_only`, `domain_general`, `domain_synthetic`,
 `domain_general_synthetic`, `synthetic_only`. `configs/eval/medical.yaml` is the paired domain-gain
 battery (medqa_4options, pubmedqa, medmcqa, mmlu-medical).

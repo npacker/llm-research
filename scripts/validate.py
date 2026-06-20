@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -27,7 +26,6 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_RUNS_DIR = REPO_ROOT / "runs"
-sys.path.insert(0, str(REPO_ROOT / "src"))  # package not installed (package = false)
 
 
 def parse_args() -> argparse.Namespace:
@@ -54,7 +52,12 @@ def parse_args() -> argparse.Namespace:
         "--text-field", default="text", help="Field for .jsonl corpora (default: text)"
     )
     p.add_argument("--generation", default="1", help="Recursive-generation label")
-    p.add_argument("--limit", type=int, default=None, help="Cap texts (smoke tests)")
+    p.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help="Cap texts loaded for a quick partial run",
+    )
     p.add_argument("--device", default=None)
     p.add_argument(
         "--no-perplexity",
@@ -72,7 +75,7 @@ def main() -> None:
     args = parse_args()
     cfg = yaml.safe_load(args.config.read_text()) if args.config.exists() else {}
 
-    from llm_replay import corpus
+    from llm_core import corpus
     from llm_replay.generation import validation
 
     synth = corpus.load_corpus(args.corpus, args.text_field, args.limit)

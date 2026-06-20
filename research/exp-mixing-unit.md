@@ -12,7 +12,7 @@ Does mixing by **token budget** vs **row count** change (a) the realized token s
 forgetting/domain-gain outcome enough to matter for the replay comparison?
 
 ## Prerequisite (small build)
-Add a `mix_by: tokens | rows` option to `src/llm_replay/training/data.py:mix_corpora` (token-budget:
+Add a `mix_by: tokens | rows` option to `src/llm_core/training/data.py:mix_corpora` (token-budget:
 draw rows from each source until its token quota — `weight × total_tokens` — is met, using the
 tokenizer). Log the **realized token share per role** either way. (Row-count is the current behavior.)
 
