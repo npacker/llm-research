@@ -1,9 +1,9 @@
-"""Corpus mixing + tokenisation for continued-LM LoRA fine-tuning.
+"""Corpus mixing for continued-LM LoRA fine-tuning.
 
 `mix_corpora` builds one raw-text dataset from several corpora at configurable
-row-count weights (each tagged with a caller-supplied role); `tokenize_for_lm`
-tokenises it for causal-LM loss. Reuses `llm_core.corpus.load_corpus` for all corpus
-specs.
+row-count weights (each tagged with a caller-supplied role); TRL's `SFTTrainer`
+(see `sft.py`) tokenises the `text` column for causal-LM loss. Reuses
+`llm_core.corpus.load_corpus` for all corpus specs.
 """
 
 from __future__ import annotations
@@ -34,13 +34,3 @@ def mix_corpora(corpora: list[dict], total_samples: int, seed: int = 0):
         parts.append(Dataset.from_dict({"text": texts, "role": [role] * len(texts)}))
     mixed = concatenate_datasets(parts).shuffle(seed=seed)
     return mixed, role_counts
-
-
-def tokenize_for_lm(dataset, tokenizer, max_len: int = 1024):
-    """Tokenise the `text` column for causal-LM training (truncation; no padding here —
-    the data collator pads per batch). Drops non-token columns."""
-
-    def _tok(batch):
-        return tokenizer(batch["text"], truncation=True, max_length=max_len)
-
-    return dataset.map(_tok, batched=True, remove_columns=dataset.column_names)

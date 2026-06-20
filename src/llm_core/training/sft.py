@@ -1,10 +1,14 @@
-"""LoRA continued-LM fine-tuning (transformers Trainer + peft) — single GPU.
+"""LoRA continued-LM fine-tuning (TRL `SFTTrainer` + peft) — single GPU.
 
-`train_lora` loads a base model, attaches a LoRA adapter, and trains on a tokenised
-raw-text dataset with causal-LM loss; it saves the adapter (and, optionally, a merged
+`train_lora` loads a base model, attaches a LoRA adapter, and trains on the raw-text
+corpus mix with causal-LM loss; it saves the adapter (and, optionally, a merged
 checkpoint). The LoRA target modules and the merged-checkpoint caveat are derived from
-the model `profile` (auto-detected), not hardcoded per architecture. `trl` is not
-installed; this uses transformers `Trainer` directly.
+the model `profile` (auto-detected), not hardcoded per architecture.
+
+This uses TRL's `SFTTrainer`: it owns tokenisation (the `text` column, truncated to
+`max_len`), the LM data collator, and the peft wiring. The dataset is plain text (no
+prompt/completion split), so `completion_only_loss` stays off — loss is taken over the
+whole sequence, matching continued-LM pre-training on raw text.
 """
 
 from __future__ import annotations
@@ -30,10 +34,15 @@ def build_lora_config(
     )
 
 
-def build_training_args(output_dir: Path, tcfg: dict):
-    from transformers import TrainingArguments
+def build_sft_config(output_dir: Path, tcfg: dict, max_len: int):
+    """SFTConfig (a TrainingArguments subclass) for raw-text continued-LM SFT.
 
-    return TrainingArguments(
+    `max_length` truncates each text to `max_len`; `packing` stays off so samples are
+    not concatenated across document boundaries (per-sample, padded per batch).
+    """
+    from trl import SFTConfig
+
+    return SFTConfig(
         output_dir=str(output_dir),
         per_device_train_batch_size=tcfg.get("per_device_train_batch_size", 4),
         gradient_accumulation_steps=tcfg.get("gradient_accumulation_steps", 4),
@@ -45,9 +54,13 @@ def build_training_args(output_dir: Path, tcfg: dict):
         bf16=tcfg.get("bf16", True),
         gradient_checkpointing=tcfg.get("gradient_checkpointing", False),
         logging_steps=tcfg.get("logging_steps", 10),
-        save_strategy="no",  # we save the merged model ourselves
+        save_strategy="no",  # we save the adapter (and optional merge) ourselves
         report_to="none",
         seed=tcfg.get("seed", 0),
+        # SFT-specific: tokenise the mixed dataset's `text` column, truncate, no packing.
+        dataset_text_field="text",
+        max_length=max_len,
+        packing=tcfg.get("packing", False),
     )
 
 
@@ -72,15 +85,8 @@ def train_lora(
     target modules default to ``profile.lora_target_modules`` (config can override).
     Returns a summary dict.
     """
-    from transformers import (
-        AutoModelForCausalLM,
-        AutoTokenizer,
-        DataCollatorForLanguageModeling,
-        Trainer,
-    )
-    from peft import get_peft_model
-
-    from .data import tokenize_for_lm
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    from trl import SFTTrainer
 
     profile = profile or ModelProfile()
 
@@ -89,26 +95,19 @@ def train_lora(
         tokenizer.pad_token = tokenizer.eos_token
 
     model = AutoModelForCausalLM.from_pretrained(model_id, dtype="auto")
-    targs = build_training_args(output_dir, train_cfg)
-    if targs.gradient_checkpointing:
-        model.enable_input_require_grads()  # needed for grad-checkpointing + LoRA
-    model = get_peft_model(
-        model, build_lora_config(lora_cfg, profile.lora_target_modules)
+    trainer = SFTTrainer(
+        model=model,
+        args=build_sft_config(output_dir, train_cfg, max_len),
+        train_dataset=mixed_dataset,
+        processing_class=tokenizer,
+        peft_config=build_lora_config(lora_cfg, profile.lora_target_modules),
     )
-    trainable, total = model.get_nb_trainable_parameters()
-
-    tok_ds = tokenize_for_lm(mixed_dataset, tokenizer, max_len)
-    collator = DataCollatorForLanguageModeling(tokenizer=tokenizer, mlm=False)
-    trainer = Trainer(
-        model=model, args=targs, train_dataset=tok_ds, data_collator=collator
-    )
+    # After construction trainer.model is the peft-wrapped model.
+    trainable, total = trainer.model.get_nb_trainable_parameters()
     result = trainer.train()
 
     adapter_dir = output_dir / "adapter"
-    model.save_pretrained(
-        adapter_dir
-    )  # LoRA adapter only (small; eval via base + lora_local_path)
-    tokenizer.save_pretrained(adapter_dir)
+    trainer.save_model(str(adapter_dir))  # LoRA adapter + tokenizer (small)
 
     summary = {
         "train_loss": float(result.training_loss),
@@ -126,7 +125,7 @@ def train_lora(
                 stacklevel=2,
             )
         merged_dir = output_dir / "merged"
-        model.merge_and_unload().save_pretrained(merged_dir)
+        trainer.model.merge_and_unload().save_pretrained(merged_dir)
         tokenizer.save_pretrained(merged_dir)
         summary["merged_dir"] = str(merged_dir)
     return summary
