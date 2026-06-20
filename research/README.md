@@ -16,6 +16,12 @@ Research planning documents and per-paper writeups for this workspace.
   Includes hypotheses, experimental protocols, metrics, challenges, timelines, and a
   publication strategy.
 
+- [`exp1-forgetting-replay.md`](exp1-forgetting-replay.md) — **Experiment 1** (the first concrete
+  test): single-generation catastrophic-forgetting & generative-replay study on a medical domain
+  (Qwen3.5-4B, LoRA continued-LM). 5 corpus-mix conditions (domain-only … synthetic-only) vs. the
+  base model; forgetting on the general battery, domain gain via held-out perplexity + medical QA.
+  Executable protocol over the built `generate`/`validate`/`train`/`evaluate`/`forgetting_report` tooling.
+
 ## How this maps to the repo
 
 The doc's "Shared Infrastructure" maps to [`../src/llm_replay/`](../src/llm_replay/);
