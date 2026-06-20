@@ -15,6 +15,8 @@ verbs of the research workflow:
 
 LoRA continued-LM fine-tuning over domain/general/synthetic corpus mixes; logic in
 [`../src/llm_replay/training/`](../src/llm_replay/training/) (see its README for the condition matrix).
+`train.py` also auto-reports **held-out domain perplexity** (base vs base+adapter) into `meta.json` —
+the objective-matched domain-learning signal; the medical battery is the secondary transfer check.
 
 ```sh
 python scripts/train.py --config configs/train/domain_synthetic.yaml --model Qwen/Qwen3.5-4B \

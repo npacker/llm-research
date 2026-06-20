@@ -138,8 +138,15 @@ def perplexity(
     device: str | None = None,
     batch_size: int = 8,
     max_length: int = 512,
+    lora: str | None = None,
 ) -> list[float]:
-    """Per-sample perplexity under a fixed reference model (lower = more coherent)."""
+    """Per-sample perplexity under a reference model (lower = better fit).
+
+    Default use: coherence under a fixed reference (``model_id``, e.g. gpt2-large). With
+    ``lora`` set, applies a LoRA adapter on top of ``model_id`` (base + adapter) — used to
+    score a *fine-tuned* model on held-out domain text without merging. For a VLM base like
+    Qwen3.5, ``AutoModelForCausalLM`` loads the text tower, matching how the adapter was trained.
+    """
     import torch
     import torch.nn.functional as F
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -151,6 +158,10 @@ def perplexity(
     model = (
         AutoModelForCausalLM.from_pretrained(model_id, dtype="auto").to(device).eval()
     )
+    if lora:
+        from peft import PeftModel
+
+        model = PeftModel.from_pretrained(model, lora).eval()
 
     out: list[float] = []
     for i in range(0, len(texts), batch_size):

@@ -2,9 +2,9 @@
 """LoRA continued-LM fine-tuning for the forgetting / generative-replay study.
 
 Mixes domain / general / synthetic corpora at config ratios, fine-tunes a LoRA adapter
-(causal-LM loss on raw text), merges it into the base, and saves the merged model under
-runs/ — ready for scripts/evaluate.py (forgetting = general battery; domain gain = medical
-battery + held-out perplexity).
+(causal-LM loss on raw text), and saves the adapter under runs/. Also auto-reports held-out
+domain perplexity (base vs base+adapter) — the direct domain-learning signal. Eval forgetting
+(general battery) + domain transfer (medical battery) with scripts/evaluate.py --lora.
 
 Conditions are just different corpus mixes (configs/train/*.yaml):
   domain_only | domain_general | domain_synthetic | domain_general_synthetic | synthetic_only
@@ -77,6 +77,17 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Also save a standalone merged checkpoint (HF/portability; vLLM can't load merged Qwen3.5)",
     )
+    p.add_argument(
+        "--heldout-n",
+        type=int,
+        default=256,
+        help="Held-out domain rows (disjoint from training) for the domain-perplexity metric",
+    )
+    p.add_argument(
+        "--no-domain-ppl",
+        action="store_true",
+        help="Skip the held-out domain-perplexity (base vs base+adapter) measurement",
+    )
     return p.parse_args()
 
 
@@ -96,6 +107,7 @@ def main() -> None:
             c["spec"] = args.synthetic
 
     # Deferred so --help works without torch.
+    from llm_replay import corpus
     from llm_replay.training import data, sft
 
     mixed, role_counts = data.mix_corpora(
@@ -122,6 +134,41 @@ def main() -> None:
     summary.update(
         {"config": cfg, "model": args.model, "mix": role_counts, "n": len(mixed)}
     )
+
+    # Held-out domain perplexity (base vs base+adapter) — the direct domain-learning signal,
+    # matching the continued-LM training objective. Held-out slice is disjoint from training.
+    domain = next(
+        (c for c in corpora if c.get("role") == "domain" and c.get("spec")), None
+    )
+    if domain and not args.no_domain_ppl:
+        import math
+        import statistics
+
+        from llm_replay.generation.validation import perplexity
+
+        dn = int(
+            total * domain["weight"]
+        )  # domain rows consumed by training (rows [0:dn])
+        held = corpus.load_corpus(
+            domain["spec"], domain.get("text_field", "text"), limit=dn + args.heldout_n
+        )[dn:]
+        if held:
+            mean = lambda ps: statistics.mean([p for p in ps if math.isfinite(p)])  # noqa: E731
+            base_ppl = mean(perplexity(held, model_id=args.model))
+            ft_ppl = mean(
+                perplexity(held, model_id=args.model, lora=summary["adapter_dir"])
+            )
+            summary["domain_heldout_perplexity"] = {
+                "n": len(held),
+                "base": base_ppl,
+                "finetuned": ft_ppl,
+                "delta": ft_ppl - base_ppl,
+            }
+            print(
+                f"[train] held-out domain ppl: base={base_ppl:.2f} -> finetuned={ft_ppl:.2f} "
+                f"(Δ{ft_ppl - base_ppl:+.2f}; negative = learned the domain)"
+            )
+
     (out_dir / "meta.json").write_text(json.dumps(summary, indent=2, default=str))
 
     print(

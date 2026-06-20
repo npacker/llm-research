@@ -26,12 +26,22 @@ Reference = the un-fine-tuned base model. Defaults: medical domain
 (`hf:MedRAG/textbooks:train:content`), general (`hf:Salesforce/wikitext:wikitext-103-raw-v1:train:text`),
 synthetic = a `generate.py`→`validate.py` `clean.jsonl` (pass `--synthetic`).
 
+## Domain gain — two metrics (no dataset mismatch)
+Training is continued-LM on raw medical prose, so the **direct** domain-learning signal is
+**held-out domain perplexity**, which matches that objective. `train.py` computes it automatically
+(base vs base+adapter on a held-out, disjoint domain slice) into `meta.json` — a *negative* delta
+means the model learned the domain (e.g. a 64-sample smoke moved 6.63 → 6.26). The medical **QA
+battery** (`configs/eval/medical.yaml`) is the secondary *transfer* check (does prose adaptation
+carry to downstream QA — expected to move less). No need to change the training dataset: perplexity
+is the objective-matched metric; switching to QA-format training would be a different (instruction-SFT)
+study and would break the raw-text synthetic-replay arm.
+
 ## Run + eval (adapter + vLLM LoRA — NOT merge)
 ```sh
-# Train (saves a LoRA adapter under runs/train_<cfg>_<ts>/adapter)
+# Train (saves a LoRA adapter under runs/train_<cfg>_<ts>/adapter; auto-reports held-out domain ppl)
 python scripts/train.py --config configs/train/domain_synthetic.yaml --model Qwen/Qwen3.5-4B \
     --synthetic runs/gen1_*/clean.jsonl
-# Forgetting (general battery) + domain gain (medical battery) on base + adapter via vLLM:
+# Forgetting (general battery) + domain transfer (medical battery) on base + adapter via vLLM:
 python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm \
     --lora runs/train_*/adapter --lora-rank 16 --config configs/eval/canary.yaml  --generation domain_synthetic
 python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm \
@@ -61,6 +71,7 @@ has both `vision_config` and `text_config`):
 ## Notes
 - Continued-LM on **raw text** (LM loss) — instruction-format SFT is a later variant.
 - Single GPU; LoRA `target_modules: all-linear`. `--limit` for smoke runs.
-- Domain gain also via held-out medical perplexity: `generation/validation.py:perplexity(texts,
-  model_id=<merged>)` (needs a merged checkpoint; pass `--merge`).
+- Held-out domain perplexity is computed automatically by `train.py` via
+  `generation/validation.py:perplexity(texts, model_id=<base>, lora=<adapter>)` — base + adapter,
+  **no merge needed** (`--heldout-n` sizes it; `--no-domain-ppl` skips).
 - **Not built:** the recursive multi-generation loop (chain generate→validate→train).
