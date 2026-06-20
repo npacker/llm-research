@@ -6,7 +6,9 @@ One YAML file per experiment **condition**, kept declarative so runs are reprodu
 
 Consumed by [`scripts/evaluate.py`](../scripts/evaluate.py) (lm-evaluation-harness). Schema:
 `tasks`, `num_fewshot`, `apply_chat_template`, `batch_size`, and a `model_args:` block merged
-into the backend args (e.g. `enable_thinking: false` to pin reasoning mode).
+into the backend args. **Keep `enable_thinking: false`** for Qwen3.x: with thinking on, the
+reasoning preamble overruns answer-extraction tasks (GSM8K measured 0.00 vs 0.60 on the same model).
+See CLAUDE.md → "Evaluation & training procedures".
 
 | Config | Tasks | Use |
 |--------|-------|-----|

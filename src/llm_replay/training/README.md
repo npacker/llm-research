@@ -42,14 +42,21 @@ python scripts/forgetting_report.py --base base=runs/gen0_canary_*/eval/results.
 ```
 
 ## Why adapter + vLLM-LoRA (not merge-then-eval)
-`scripts/evaluate.py --lora` loads the **base** model (its own config) and applies the adapter via
-vLLM's `lora_local_path`. This is the right path for **Qwen3.5** because:
-- vLLM **rejects a merged Qwen3.5 checkpoint** — merging via `AutoModelForCausalLM` saves a
-  *text-only* `Qwen3_5TextConfig`, but vLLM's loader for this arch expects the multimodal wrapper.
-- The **HF backend on a merged model is pathologically slow** for Qwen3.5: it's a linear-attention/
-  conv hybrid and, without `flash-linear-attention`/`causal-conv1d`, falls back to a slow torch path.
-- Adapters are tiny (~MBs) and keep vLLM's fast kernels. `train.py --merge` still writes a standalone
-  merged checkpoint for HF/portability if needed.
+`scripts/evaluate.py --lora <adapter>` loads the **base** model (with its own config) and applies
+the adapter (vLLM `lora_local_path` / HF `peft`) — no merge needed. This is the right default for
+**Qwen3.5** because it is a **vision-language model** (`Qwen3_5ForConditionalGeneration`; its config
+has both `vision_config` and `text_config`):
+- A merged checkpoint made the easy way is **text-only**: `AutoModelForCausalLM` maps Qwen3.5 →
+  `Qwen3_5ForCausalLM` (text tower only, `Qwen3_5TextConfig`). vLLM registers **only** the full
+  `Qwen3_5ForConditionalGeneration`, so it rejects that text-only sub-architecture.
+- A **full** vision+text merge *does* load in vLLM (load via `AutoModelForImageTextToText`, scope
+  LoRA to `language_model.*`, merge, save) — but it drags the vision tower along as dead weight for a
+  text-only fine-tune. Not worth it; the adapter path sidesteps the issue entirely.
+- Adapters are tiny (~MBs). `train.py --merge` writes the (text-only) merged checkpoint for HF /
+  portability — eval **that** with `--backend hf`, not vLLM.
+
+(The HF backend is *not* the problem — it runs on the GPU fine. An earlier 17-min HF run was
+`batch_size: auto` thrashing on WSL's over-reported memory, not the model; a fixed batch is quick.)
 
 ## Notes
 - Continued-LM on **raw text** (LM loss) — instruction-format SFT is a later variant.

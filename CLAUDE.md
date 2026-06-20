@@ -76,6 +76,21 @@ python scripts/validate.py --corpus runs/gen1_token_edt_<ts>/samples.jsonl --rea
 Eval/diversity results write to `runs/` (gitignored). See [`scripts/README.md`](scripts/README.md)
 and [`eval_tasks/README.md`](eval_tasks/README.md) for details.
 
+### Evaluation & training procedures (verified the hard way — don't skip)
+
+- **Reasoning models (Qwen3.x): keep `enable_thinking: false` in eval configs.** Left on, the model
+  emits a thinking preamble that overruns answer-extraction tasks' token budget — e.g. GSM8K scored
+  **0.00 with thinking on vs 0.60 off** on the same checkpoint. All `configs/eval/*.yaml` set it; keep it.
+  (`scripts/evaluate.py` threads it to both the `hf` and `vllm` backends.)
+- **Evaluate a fine-tuned model as base + LoRA adapter via vLLM**, not a merged checkpoint:
+  `python scripts/evaluate.py --model <base> --backend vllm --lora runs/train_*/adapter --lora-rank <r> --config configs/eval/canary.yaml`.
+  Qwen3.5 is a **VLM**; `train.py`'s default merge is text-only (`Qwen3_5ForCausalLM`), a sub-arch vLLM
+  doesn't register, so vLLM can't load it. `train.py --merge` is for HF/portability — eval it with `--backend hf`.
+- **HF backend `batch_size: auto` can thrash on WSL** (the GPU memory budget is over-reported), turning a
+  ~2-min eval into ~17 min of batch probing. Use a fixed `batch_size` with `--backend hf`, or prefer vLLM at scale.
+- The HF backend **does** run on the GPU (`HFLM` defaults to `cuda`); it's a valid backend, just slower than
+  vLLM at scale (vLLM's fixed init cost amortizes over large runs).
+
 Gated HuggingFace models: set `HF_TOKEN` in the **host** environment before opening the container — it's passed through automatically. See `.devcontainer/README.md` ("Day-to-day") for download/cache-location and status-check details.
 
 ## Hardware constraints (single RTX PRO 6000 Blackwell, 96 GB)
