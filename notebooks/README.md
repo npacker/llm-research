@@ -4,6 +4,10 @@ Jupyter notebooks for interactive exploration, ad-hoc analysis, and paper figure
 (collapse-trajectory plots, distribution-matching visualizations). The kernel
 **"Python (llm-research)"** is pre-registered by `.devcontainer/post-create.sh`.
 
+See [`examples/`](examples/) for a reference cookbook of the external stack (vLLM,
+transformers, TRL, peft, lm-eval, diversity metrics) — runnable, documentation-style
+notebooks demonstrating idiomatic raw usage of each library.
+
 Guidelines:
 
 - Notebooks are for exploration and visualization — promote any reusable logic into

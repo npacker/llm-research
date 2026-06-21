@@ -1,4 +1,4 @@
-# `examples/` — a cookbook of the external stack
+# `notebooks/examples/` — a cookbook of the external stack
 
 Runnable Jupyter notebooks that demonstrate **idiomatic, raw usage of the third-party
 libraries this project is built on** — vLLM, transformers, TRL, peft,
@@ -11,8 +11,8 @@ These are **reference / documentation** notebooks. They call the external APIs d
 where `llm_core`/`scripts` wrap that same primitive, so you can jump from "how does vLLM
 work" to "how does this repo use it".
 
-For the wrapped, config-driven versions of these operations, see [`../scripts/`](../scripts/)
-and [`../CLAUDE.md`](../CLAUDE.md).
+For the wrapped, config-driven versions of these operations, see [`scripts/`](../../scripts/)
+and [`CLAUDE.md`](../../CLAUDE.md).
 
 ## Running
 
@@ -20,7 +20,7 @@ The project env lives at `/opt/venv` and is already on `PATH` (no activation nee
 JupyterLab, pick the **"Python (llm-research)"** kernel. To run a notebook headless:
 
 ```sh
-jupyter nbconvert --to notebook --execute examples/01_vllm_offline.ipynb
+jupyter nbconvert --to notebook --execute notebooks/examples/01_vllm_offline.ipynb
 ```
 
 Notebooks default to the real research model `Qwen/Qwen3.5-4B` (a `MODEL = …` constant at
@@ -30,7 +30,7 @@ small `LIMIT` / `max_tokens` / `num_samples`. Any artifacts are written under `r
 
 **Hardware:** single RTX PRO 6000 Blackwell (96 GB). Notebooks never set
 `tensor_parallel_size` / `--tensor-parallel-size` (leave TP at 1) and prefer native FP8
-where shown. See [`../CLAUDE.md`](../CLAUDE.md) for the full constraints.
+where shown. See [`CLAUDE.md`](../../CLAUDE.md) for the full constraints.
 
 ## Notebooks
 
