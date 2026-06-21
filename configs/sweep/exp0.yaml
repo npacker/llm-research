@@ -2,7 +2,7 @@
 #
 # Dual goal: (1) calibrate that forgetting is measurable; (2) find the best-case recipe that
 # learns MedRAG medical text while minimizing knowledge forgetting and staying coherent.
-# Driver: scripts/sweep_exp0.py (phases: train -> eval -> coherence -> report).
+# Driver: experiments/exp0_forgetting_signal/sweep.py (phases: train -> shortlist -> stageb -> report).
 name: exp0
 model: Qwen/Qwen3.5-4B
 train_config: configs/train/domain_only.yaml   # no-rehearsal mix (domain weight 1.0)

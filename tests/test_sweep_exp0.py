@@ -1,19 +1,23 @@
-"""Pure helpers in the Exp-0 sweep driver: grid enumeration + Pareto shortlist.
+"""Exp-0 sweep runner: cfg→grid wiring + Stage-B served orchestration.
 
-`scripts/` isn't an installed package; load the module from its path. Its top-level imports
-are stdlib + yaml (pandas/sklearn/torch are deferred inside functions), so this is CPU-only.
+The runner lives under `experiments/` (not an installed package), so load it from its path.
+Its pure primitives (grid enumeration, Pareto front, the forgetting score, result-delta
+bucketing) now live in `llm_core`/`llm_replay` and are tested there (test_sweep.py,
+test_forgetting.py, test_evaluation.py); this file covers what stays runner-local — that the
+study config maps onto `enumerate_grid`, and the shared-server Stage-B flow. Top-level imports
+are stdlib + yaml + the pure `llm_core`/`llm_replay` helpers (pandas/torch/vllm are deferred
+inside functions), so this is CPU-only.
 """
 
 import importlib.util
 from pathlib import Path
 
-import pytest
-
 REPO_ROOT = Path(__file__).resolve().parent.parent
+RUNNER = REPO_ROOT / "experiments/exp0_forgetting_signal/sweep.py"
 
 
 def _load_sweep_module():
-    spec = importlib.util.spec_from_file_location("sweep_exp0", REPO_ROOT / "scripts/sweep_exp0.py")
+    spec = importlib.util.spec_from_file_location("exp0_sweep", RUNNER)
     mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(mod)
     return mod
@@ -23,6 +27,7 @@ sweep = _load_sweep_module()
 
 
 def test_build_points_main_grid_plus_rank_subsweep_dedups_center():
+    """The runner assembles this study's axes (+ rank sub-sweep) for enumerate_grid."""
     cfg = {
         "grid": {
             "learning_rate": [1e-4, 2e-4],
@@ -35,52 +40,11 @@ def test_build_points_main_grid_plus_rank_subsweep_dedups_center():
             "ranks": [8, 16, 32],  # r16 here duplicates the main-grid center → deduped
         },
     }
-    points = sweep.build_points(cfg)
-    ids = [p["id"] for p in points]
-    # 2 main (lr1e-4/r16, lr2e-4/r16) + r8/r32 at the center = 4 unique points
+    ids = [p["id"] for p in sweep.build_points(cfg)]
+    # 2 main (lr1e-4/r16, lr2e-4/r16) + r8/r32 at the center = 4 unique points.
     assert len(ids) == len(set(ids)) == 4
     assert "lr0.0002_e1_n1000_r16" in ids  # center appears once
     assert "lr0.0002_e1_n1000_r8" in ids and "lr0.0002_e1_n1000_r32" in ids
-
-
-def test_pareto_front_minimizes_both_axes():
-    # x = domain ppl Δ (lower = more learning), y = general ppl Δ (lower = less forgetting).
-    items = [
-        {"id": "a", "x": -5.0, "y": 3.0},  # most learning, most forgetting
-        {"id": "b", "x": -3.0, "y": 1.0},  # middle — non-dominated
-        {"id": "c", "x": -1.0, "y": 0.5},  # least learning, least forgetting
-        {"id": "d", "x": -2.0, "y": 2.0},  # dominated by b (b ≤ on both, < on both)
-    ]
-    front = {p["id"] for p in sweep._pareto_front(items, "x", "y")}
-    assert front == {"a", "b", "c"}
-    assert "d" not in front
-
-
-def test_pareto_front_drops_strictly_dominated_only():
-    items = [
-        {"id": "p", "x": 0.0, "y": 0.0},
-        {"id": "q", "x": 1.0, "y": 1.0},  # strictly dominated by p
-    ]
-    front = {p["id"] for p in sweep._pareto_front(items, "x", "y")}
-    assert front == {"p"}
-
-
-def test_learning_per_forgetting_no_forgetting_ranks_first():
-    # forget <= 0 (general ppl unchanged/improved) = Pareto-best → +inf, no epsilon clamp.
-    assert sweep._learning_per_forgetting(-5.0, 0.0) == float("inf")
-    assert sweep._learning_per_forgetting(-0.001, -3.0) == float("inf")
-    # With real forgetting it's a finite learning/forgetting ratio (higher = better).
-    assert sweep._learning_per_forgetting(-5.0, 1.0) == pytest.approx(5.0)
-    assert sweep._learning_per_forgetting(-1.0, 2.0) == pytest.approx(0.5)
-
-
-def test_learning_per_forgetting_orders_strong_learner_above_weak():
-    # A big learner with small forgetting beats a tiny learner with the same forgetting,
-    # and both beat a forgetting point when one has none (inf).
-    strong = sweep._learning_per_forgetting(-5.0, 0.5)   # 10.0
-    weak = sweep._learning_per_forgetting(-0.5, 0.5)     # 1.0
-    none = sweep._learning_per_forgetting(-0.5, -0.1)    # inf
-    assert none > strong > weak
 
 
 # --- Stage B served orchestration: one shared vLLM init for eval + coherence --- #
@@ -102,7 +66,9 @@ def test_served_eval_cmd_targets_server_by_lora_name(tmp_path):
     )
     assert cmd[cmd.index("--backend") + 1] == "local-completions"
     assert cmd[cmd.index("--model") + 1] == pt["id"]  # served LoRA-module name
-    assert cmd[cmd.index("--tokenizer") + 1] == _STAGEB_CFG["model"]  # base for tokenisation
+    assert (
+        cmd[cmd.index("--tokenizer") + 1] == _STAGEB_CFG["model"]
+    )  # base for tokenisation
     assert cmd[cmd.index("--base-url") + 1] == "http://127.0.0.1:8000/v1/completions"
     assert cmd[cmd.index("--limit") + 1] == "200"
 
@@ -115,11 +81,16 @@ def test_served_eval_cmd_omits_limit_when_unset(tmp_path):
 
 def test_served_coherence_cmd_uses_served_model(tmp_path):
     cmd = sweep._served_coherence_cmd(
-        _STAGEB_CFG, {"id": "pt1", "lora_rank": 16}, tmp_path, "http://127.0.0.1:8000/v1"
+        _STAGEB_CFG,
+        {"id": "pt1", "lora_rank": 16},
+        tmp_path,
+        "http://127.0.0.1:8000/v1",
     )
     assert cmd[cmd.index("--served-model") + 1] == "pt1"
     assert cmd[cmd.index("--base-url") + 1] == "http://127.0.0.1:8000/v1"
-    assert cmd[cmd.index("--model") + 1] == _STAGEB_CFG["model"]  # base id for the tokenizer
+    assert (
+        cmd[cmd.index("--model") + 1] == _STAGEB_CFG["model"]
+    )  # base id for the tokenizer
     assert cmd[cmd.index("--num-samples") + 1] == "64"
 
 

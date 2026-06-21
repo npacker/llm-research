@@ -5,7 +5,9 @@ a string ``alias``) so the filter logic is locked down for both the live eval an
 forgetting report that reuses it.
 """
 
-from llm_core.evaluation import summarize
+import pytest
+
+from llm_core.evaluation import bucket_deltas, summarize, task_matches
 
 RESULTS = {
     "results": {
@@ -54,3 +56,41 @@ def test_forgetting_report_flatten_shape():
     flat = {f"{t}/{m}": v for t, m, v in summarize(RESULTS)}
     assert flat["gsm8k/exact_match (strict-match)"] == 0.6
     assert flat["leaderboard_ifeval/prompt_level_strict_acc"] == 0.42
+
+
+def test_task_matches_exact_and_group_prefix():
+    # lm-eval expands a group task into prefixed subtasks; the group name must match them.
+    assert task_matches("gsm8k", ["gsm8k"])
+    assert task_matches(
+        "leaderboard_gpqa_main", ["leaderboard_gpqa"]
+    )  # subtask of group
+    assert not task_matches("leaderboard_ifeval", ["gsm8k", "leaderboard_gpqa"])
+
+
+def test_bucket_deltas_groups_by_first_matching_bucket():
+    current = {
+        "gsm8k/acc": 0.5,
+        "leaderboard_ifeval/acc": 0.30,
+        "leaderboard_gpqa_main/acc": 0.20,
+    }
+    base = {
+        "gsm8k/acc": 0.6,
+        "leaderboard_ifeval/acc": 0.42,
+        "leaderboard_gpqa_main/acc": 0.25,
+    }
+    grouped = bucket_deltas(
+        current,
+        base,
+        {"fmt": ["leaderboard_ifeval"], "knowledge": ["gsm8k", "leaderboard_gpqa"]},
+    )
+    assert grouped["fmt"] == pytest.approx([-0.12])  # ifeval delta
+    assert sorted(grouped["knowledge"]) == pytest.approx(
+        [-0.1, -0.05]
+    )  # gsm8k + gpqa deltas
+
+
+def test_bucket_deltas_skips_metrics_missing_from_base():
+    current = {"gsm8k/acc": 0.5, "newtask/acc": 0.9}
+    base = {"gsm8k/acc": 0.6}  # newtask absent from base
+    grouped = bucket_deltas(current, base, {"knowledge": ["gsm8k", "newtask"]})
+    assert grouped["knowledge"] == pytest.approx([-0.1])  # newtask skipped, not counted

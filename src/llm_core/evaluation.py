@@ -40,3 +40,41 @@ def flatten_results(results) -> dict[str, float]:
     """
     r = results if isinstance(results, dict) else json.loads(Path(results).read_text())
     return {f"{t}/{m}": v for t, m, v in summarize(r)}
+
+
+def task_matches(task: str, names: list[str]) -> bool:
+    """True if ``task`` equals or is prefixed by one of ``names``.
+
+    lm-eval expands a group task into subtasks (e.g. ``leaderboard_gpqa`` ->
+    ``leaderboard_gpqa_main`` / ``…_diamond``), so a config that names the *group* must
+    match its expanded members — prefix matching does that.
+    """
+    return any(task == n or task.startswith(n) for n in names)
+
+
+def bucket_deltas(
+    current: dict[str, float],
+    base: dict[str, float],
+    buckets: dict[str, list[str]],
+) -> dict[str, list[float]]:
+    """Group ``current - base`` metric deltas by task bucket.
+
+    ``current``/``base`` are flattened ``{"task/metric": value}`` dicts (see
+    :func:`flatten_results`). ``buckets`` maps a bucket name to a list of task-name
+    prefixes (e.g. ``{"format": ["leaderboard_ifeval"], "knowledge": ["gsm8k", ...]}``).
+    Returns ``{bucket: [deltas]}`` over the metrics whose task matches that bucket (first
+    matching bucket wins) and that exist in *both* dicts — so a missing base metric is
+    skipped rather than counted as a delta. The caller decides how to reduce each list
+    (mean, etc.) and can treat an empty list as "no data".
+    """
+    out: dict[str, list[float]] = {name: [] for name in buckets}
+    for key, val in current.items():
+        b = base.get(key)
+        if b is None:
+            continue
+        task = key.split("/", 1)[0]
+        for name, prefixes in buckets.items():
+            if task_matches(task, prefixes):
+                out[name].append(val - b)
+                break
+    return out

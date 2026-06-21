@@ -1,6 +1,6 @@
 # Experiment 0 — Forgetting-signal calibration & best-case no-rehearsal recipe
 
-**Status:** implemented (tooling in `scripts/sweep_exp0.py`); runs **before**
+**Status:** implemented (runner in `experiments/exp0_forgetting_signal/sweep.py`); runs **before**
 [`exp1-forgetting-replay.md`](exp1-forgetting-replay.md).
 **Why first:** Exp 1 (replay vs. forgetting) only has signal if domain-only fine-tuning *both*
 (a) measurably **learns** the domain and (b) measurably **forgets** general capability. This
@@ -74,13 +74,13 @@ python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm \
     --config configs/eval/medical.yaml --generation base --output-dir runs/genbase_medical_ref
 
 # 1) Run the sweep (phases are resumable; --dry-run prints the commands):
-python scripts/sweep_exp0.py --phase all     # train(all) -> shortlist -> eval/coherence(shortlist) -> report
+python experiments/exp0_forgetting_signal/sweep.py --phase all   # train(all) -> shortlist -> stageb(shortlist) -> report
 #   or step through:  --phase train | shortlist | eval | coherence | report
 #   Stage A (train) runs on all ~20 points; the Pareto shortlist gates Stage B (eval/coherence)
 #   to ~shortlist_k survivors. Inspect runs/exp0/shortlist.json before spending Stage-B compute.
 
 # 2) Throughput option — amortize vLLM init across all points into ONE server:
-python scripts/sweep_exp0.py --phase plan --emit-serve-cmd   # prints the vllm serve + eval cmds
+python experiments/exp0_forgetting_signal/sweep.py --phase plan --emit-serve-cmd   # prints the vllm serve + eval cmds
 
 # 3) Read the ranked best-case table:
 cat runs/exp0/summary.md
@@ -92,7 +92,7 @@ python scripts/evaluate.py --model Qwen/Qwen3.5-4B --backend vllm --lora runs/ex
     --lora-rank <r> --config configs/eval/medical.yaml  --generation <winner>     # domain transfer
 ```
 During the sweep, `eval_limit` (config) caps items/task for speed; the winner is re-confirmed on
-full sets. `sweep_exp0.py --phase report` writes `runs/exp0/summary.{json,md}` and a `best_case_score`
+full sets. `sweep.py --phase report` writes `runs/exp0/summary.{json,md}` and a `best_case_score`
 (domain gain per unit knowledge forgetting, **blank if degenerate**), sorted best-first.
 
 ## Decision criteria

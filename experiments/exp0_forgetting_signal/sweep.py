@@ -51,7 +51,12 @@ from pathlib import Path
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parent.parent
+from llm_core.evaluation import bucket_deltas, flatten_results
+from llm_core.sweep import enumerate_grid, pareto_front
+from llm_replay.forgetting import learning_per_forgetting
+
+# This runner lives at experiments/<study>/sweep.py → repo root is two levels up.
+REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
 def parse_args() -> argparse.Namespace:
@@ -62,9 +67,20 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--phase",
         default="all",
-        choices=["plan", "train", "shortlist", "eval", "coherence", "stageb", "report", "all"],
+        choices=[
+            "plan",
+            "train",
+            "shortlist",
+            "eval",
+            "coherence",
+            "stageb",
+            "report",
+            "all",
+        ],
     )
-    p.add_argument("--dry-run", action="store_true", help="Print commands, do not run them")
+    p.add_argument(
+        "--dry-run", action="store_true", help="Print commands, do not run them"
+    )
     p.add_argument(
         "--emit-serve-cmd",
         action="store_true",
@@ -86,37 +102,27 @@ def parse_args() -> argparse.Namespace:
 
 
 _AXES = ("learning_rate", "num_train_epochs", "num_samples", "lora_rank")
+_ID_FORMAT = "lr{learning_rate:g}_e{num_train_epochs:g}_n{num_samples}_r{lora_rank}"
 
 
 def build_points(cfg: dict) -> list[dict]:
     """Enumerate grid points: main grid (lr×epochs×n at ranks_main) + a rank sub-sweep.
 
-    Uses sklearn's ParameterGrid for the cartesian product; a dict keyed by the axis
-    tuple de-dups the rank center shared by the main grid and the sub-sweep, preserving
-    first-seen order.
+    Thin adapter over :func:`llm_core.sweep.enumerate_grid`: assemble this study's axes
+    (the rank sub-sweep becomes explicit extra points at a fixed center) and let the shared
+    primitive take the product, de-dup the shared center, and stamp each point id.
     """
-    from sklearn.model_selection import ParameterGrid
-
     g = cfg["grid"]
-    settings = list(
-        ParameterGrid(
-            {
-                "learning_rate": g["learning_rate"],
-                "num_train_epochs": g["num_train_epochs"],
-                "num_samples": g["num_samples"],
-                "lora_rank": cfg.get("ranks_main", [16]),
-            }
-        )
-    )
+    axes = {
+        "learning_rate": g["learning_rate"],
+        "num_train_epochs": g["num_train_epochs"],
+        "num_samples": g["num_samples"],
+        "lora_rank": cfg.get("ranks_main", [16]),
+    }
+    extra = []
     if sub := cfg.get("rank_subsweep"):
-        settings += [{**sub["at"], "lora_rank": r} for r in sub["ranks"]]
-
-    points: dict[tuple, dict] = {}
-    for s in settings:
-        key = tuple(s[a] for a in _AXES)
-        pid = "lr{:g}_e{:g}_n{}_r{}".format(*key)
-        points.setdefault(key, {"id": pid, **{a: s[a] for a in _AXES}})
-    return list(points.values())
+        extra = [{**sub["at"], "lora_rank": r} for r in sub["ranks"]]
+    return enumerate_grid(axes, extra=extra, id_format=_ID_FORMAT)
 
 
 def run(cmd: list[str], *, dry_run: bool) -> float:
@@ -139,20 +145,34 @@ def phase_train(cfg: dict, points: list[dict], dry_run: bool) -> None:
         out = point_dir(cfg, pt["id"])
         print(f"[sweep:train] {pt['id']}")
         cmd = [
-            sys.executable, str(REPO_ROOT / "scripts/train.py"),
-            "--config", str(REPO_ROOT / cfg["train_config"]),
-            "--model", cfg["model"],
-            "--output-dir", str(out),
-            "--num-samples", str(pt["num_samples"]),
-            "--lr", str(pt["learning_rate"]),
-            "--epochs", str(pt["num_train_epochs"]),
-            "--lora-rank", str(pt["lora_rank"]),
-            "--val-frac", str(cfg.get("val_frac", 0.05)),
-            "--early-stopping-patience", str(cfg.get("early_stopping_patience", 0)),
+            sys.executable,
+            str(REPO_ROOT / "scripts/train.py"),
+            "--config",
+            str(REPO_ROOT / cfg["train_config"]),
+            "--model",
+            cfg["model"],
+            "--output-dir",
+            str(out),
+            "--num-samples",
+            str(pt["num_samples"]),
+            "--lr",
+            str(pt["learning_rate"]),
+            "--epochs",
+            str(pt["num_train_epochs"]),
+            "--lora-rank",
+            str(pt["lora_rank"]),
+            "--val-frac",
+            str(cfg.get("val_frac", 0.05)),
+            "--early-stopping-patience",
+            str(cfg.get("early_stopping_patience", 0)),
         ]
         if cfg.get("general_heldout"):
-            cmd += ["--general-heldout", cfg["general_heldout"],
-                    "--general-heldout-n", str(cfg.get("general_heldout_n", 256))]
+            cmd += [
+                "--general-heldout",
+                cfg["general_heldout"],
+                "--general-heldout-n",
+                str(cfg.get("general_heldout_n", 256)),
+            ]
         secs = run(cmd, dry_run=dry_run)
         _record(out, {**pt, "train_seconds": secs})
 
@@ -177,9 +197,9 @@ def phase_shortlist(cfg: dict, points: list[dict]) -> list[dict]:
         dom, gen = _deltas(cfg, pt["id"])
         if dom is not None and gen is not None and dom < 0:
             eligible.append({**pt, "domain_delta": dom, "general_delta": gen})
-    front = _pareto_front(eligible, "domain_delta", "general_delta")
+    front = pareto_front(eligible, "domain_delta", "general_delta")
     front.sort(
-        key=lambda p: _learning_per_forgetting(p["domain_delta"], p["general_delta"]),
+        key=lambda p: learning_per_forgetting(p["domain_delta"], p["general_delta"]),
         reverse=True,
     )
     k = cfg.get("shortlist_k", 6)
@@ -194,34 +214,10 @@ def phase_shortlist(cfg: dict, points: list[dict]) -> list[dict]:
         f"{len(shortlist)} shortlisted (cap {k}):"
     )
     for p in shortlist:
-        print(f"  - {p['id']}  domainΔ={p['domain_delta']:+.3f}  generalΔ={p['general_delta']:+.3f}")
+        print(
+            f"  - {p['id']}  domainΔ={p['domain_delta']:+.3f}  generalΔ={p['general_delta']:+.3f}"
+        )
     return shortlist
-
-
-def _learning_per_forgetting(domain_delta: float, forget: float) -> float:
-    """Domain-learning gain per unit forgetting (higher = better), for ranking.
-
-    ``domain_delta`` is the domain perplexity Δ (negative = learned); ``forget`` is the
-    forgetting magnitude in whatever *single* unit the caller passes (general ppl Δ, or a
-    knowledge-accuracy drop), positive = worse. A point that learned with no measurable
-    forgetting (``forget <= 0``) is Pareto-best on this axis → ``+inf``, so it ranks first
-    without an arbitrary epsilon-clamp distorting the scale.
-    """
-    learned = -domain_delta
-    return float("inf") if forget <= 0 else learned / forget
-
-
-def _pareto_front(items: list[dict], x: str, y: str) -> list[dict]:
-    """Non-dominated set, minimizing both `x` and `y` (a point is dominated if another is
-    ≤ on both axes and < on at least one)."""
-    front = []
-    for a in items:
-        if not any(
-            b is not a and b[x] <= a[x] and b[y] <= a[y] and (b[x] < a[x] or b[y] < a[y])
-            for b in items
-        ):
-            front.append(a)
-    return front
 
 
 def _active_points(cfg: dict, points: list[dict]) -> list[dict]:
@@ -238,14 +234,22 @@ def phase_eval(cfg: dict, points: list[dict], dry_run: bool) -> None:
         out = point_dir(cfg, pt["id"])
         print(f"[sweep:eval] {pt['id']}")
         cmd = [
-            sys.executable, str(REPO_ROOT / "scripts/evaluate.py"),
-            "--config", str(REPO_ROOT / cfg["eval_config"]),
-            "--model", cfg["model"],
-            "--backend", "vllm",
-            "--lora", str(out / "adapter"),
-            "--lora-rank", str(pt["lora_rank"]),
-            "--generation", pt["id"],
-            "--output-dir", str(out / "eval"),
+            sys.executable,
+            str(REPO_ROOT / "scripts/evaluate.py"),
+            "--config",
+            str(REPO_ROOT / cfg["eval_config"]),
+            "--model",
+            cfg["model"],
+            "--backend",
+            "vllm",
+            "--lora",
+            str(out / "adapter"),
+            "--lora-rank",
+            str(pt["lora_rank"]),
+            "--generation",
+            pt["id"],
+            "--output-dir",
+            str(out / "eval"),
         ]
         if cfg.get("eval_limit"):
             cmd += ["--limit", str(cfg["eval_limit"])]
@@ -259,12 +263,18 @@ def phase_coherence(cfg: dict, points: list[dict], dry_run: bool) -> None:
         print(f"[sweep:coherence] {pt['id']}")
         run(
             [
-                sys.executable, str(REPO_ROOT / "scripts/coherence_check.py"),
-                "--model", cfg["model"],
-                "--lora", str(out / "adapter"),
-                "--lora-rank", str(pt["lora_rank"]),
-                "--num-samples", str(cfg.get("coherence_samples", 200)),
-                "--output-dir", str(out),
+                sys.executable,
+                str(REPO_ROOT / "scripts/coherence_check.py"),
+                "--model",
+                cfg["model"],
+                "--lora",
+                str(out / "adapter"),
+                "--lora-rank",
+                str(pt["lora_rank"]),
+                "--num-samples",
+                str(cfg.get("coherence_samples", 200)),
+                "--output-dir",
+                str(out),
             ],
             dry_run=dry_run,
         )
@@ -273,33 +283,51 @@ def phase_coherence(cfg: dict, points: list[dict], dry_run: bool) -> None:
 def _served_eval_cmd(cfg: dict, pt: dict, out: Path, completions_url: str) -> list[str]:
     """evaluate.py argv that hits the shared server by the point's LoRA-module name."""
     cmd = [
-        sys.executable, str(REPO_ROOT / "scripts/evaluate.py"),
-        "--config", str(REPO_ROOT / cfg["eval_config"]),
-        "--model", pt["id"],                 # served LoRA-module name
-        "--backend", "local-completions",
-        "--base-url", completions_url,
-        "--tokenizer", cfg["model"],         # base id → lm-eval can tokenise the adapter name
-        "--generation", pt["id"],
-        "--output-dir", str(out / "eval"),
+        sys.executable,
+        str(REPO_ROOT / "scripts/evaluate.py"),
+        "--config",
+        str(REPO_ROOT / cfg["eval_config"]),
+        "--model",
+        pt["id"],  # served LoRA-module name
+        "--backend",
+        "local-completions",
+        "--base-url",
+        completions_url,
+        "--tokenizer",
+        cfg["model"],  # base id → lm-eval can tokenise the adapter name
+        "--generation",
+        pt["id"],
+        "--output-dir",
+        str(out / "eval"),
     ]
     if cfg.get("eval_limit"):
         cmd += ["--limit", str(cfg["eval_limit"])]
     return cmd
 
 
-def _served_coherence_cmd(cfg: dict, pt: dict, out: Path, openai_base_url: str) -> list[str]:
+def _served_coherence_cmd(
+    cfg: dict, pt: dict, out: Path, openai_base_url: str
+) -> list[str]:
     """coherence_check.py argv that samples the point's LoRA off the shared server."""
     return [
-        sys.executable, str(REPO_ROOT / "scripts/coherence_check.py"),
-        "--model", cfg["model"],
-        "--base-url", openai_base_url,
-        "--served-model", pt["id"],
-        "--num-samples", str(cfg.get("coherence_samples", 200)),
-        "--output-dir", str(out),
+        sys.executable,
+        str(REPO_ROOT / "scripts/coherence_check.py"),
+        "--model",
+        cfg["model"],
+        "--base-url",
+        openai_base_url,
+        "--served-model",
+        pt["id"],
+        "--num-samples",
+        str(cfg.get("coherence_samples", 200)),
+        "--output-dir",
+        str(out),
     ]
 
 
-def phase_stage_b(cfg: dict, points: list[dict], dry_run: bool, base_url: str | None = None) -> None:
+def phase_stage_b(
+    cfg: dict, points: list[dict], dry_run: bool, base_url: str | None = None
+) -> None:
     """Stage B over ONE vLLM init: serve base + all shortlisted LoRAs, then run the
     regression battery (lm-eval local-completions) and the coherence probe (HTTP) against
     that single engine. Resumable: a point whose results.json / coherence.json already
@@ -310,7 +338,9 @@ def phase_stage_b(cfg: dict, points: list[dict], dry_run: bool, base_url: str | 
     if not active:
         print("[sweep:stageb] no active points (run shortlist first)")
         return
-    lora_modules = {pt["id"]: str(point_dir(cfg, pt["id"]) / "adapter") for pt in active}
+    lora_modules = {
+        pt["id"]: str(point_dir(cfg, pt["id"]) / "adapter") for pt in active
+    }
     max_rank = max(pt["lora_rank"] for pt in active)
     server = ServedVLLM(
         cfg["model"],
@@ -332,7 +362,9 @@ def phase_stage_b(cfg: dict, points: list[dict], dry_run: bool, base_url: str | 
                 print(f"[sweep:stageb] eval {pt['id']} — already done, skip")
                 continue
             print(f"[sweep:stageb] eval {pt['id']}")
-            secs = run(_served_eval_cmd(cfg, pt, out, server.completions_url), dry_run=dry_run)
+            secs = run(
+                _served_eval_cmd(cfg, pt, out, server.completions_url), dry_run=dry_run
+            )
             _record(out, {"eval_seconds": secs})
         for pt in active:
             out = point_dir(cfg, pt["id"])
@@ -340,7 +372,10 @@ def phase_stage_b(cfg: dict, points: list[dict], dry_run: bool, base_url: str | 
                 print(f"[sweep:stageb] coherence {pt['id']} — already done, skip")
                 continue
             print(f"[sweep:stageb] coherence {pt['id']}")
-            run(_served_coherence_cmd(cfg, pt, out, server.openai_base_url), dry_run=dry_run)
+            run(
+                _served_coherence_cmd(cfg, pt, out, server.openai_base_url),
+                dry_run=dry_run,
+            )
 
 
 def _record(out: Path, extra: dict) -> None:
@@ -352,15 +387,8 @@ def _record(out: Path, extra: dict) -> None:
     path.write_text(json.dumps(data, indent=2, default=str))
 
 
-def _matches(task: str, names: list[str]) -> bool:
-    """lm-eval expands group tasks (e.g. leaderboard_gpqa -> *_main); match by prefix."""
-    return any(task == n or task.startswith(n) for n in names)
-
-
 def phase_report(cfg: dict, points: list[dict]) -> None:
     import pandas as pd
-
-    from llm_core.evaluation import flatten_results
 
     ref_path = REPO_ROOT / cfg["base_canary_ref"]
     base = {}
@@ -370,7 +398,9 @@ def phase_report(cfg: dict, points: list[dict]) -> None:
         print(f"[sweep:report] WARNING: base reference {ref_path} missing — Δ omitted")
 
     shortlisted = {pt["id"] for pt in _active_points(cfg, points)}
-    has_shortlist = (REPO_ROOT / cfg.get("out_root", "runs/exp0") / "shortlist.json").exists()
+    has_shortlist = (
+        REPO_ROOT / cfg.get("out_root", "runs/exp0") / "shortlist.json"
+    ).exists()
     fmt_names, know_names = cfg["format_tasks"], cfg["knowledge_tasks"]
     rows = []
     for pt in points:
@@ -386,14 +416,10 @@ def phase_report(cfg: dict, points: list[dict]) -> None:
                     f"[sweep:report] WARNING: {pt['id']} eval metric keys don't overlap the "
                     f"base reference (lm-eval version/label skew?) — knowledge/format Δ omitted"
                 )
-            for key, v in cur.items():
-                task, b = key.split("/", 1)[0], base.get(key)
-                if b is None:
-                    continue
-                if _matches(task, fmt_names):
-                    fmt_deltas.append(v - b)
-                elif _matches(task, know_names):
-                    know_deltas.append(v - b)
+            grouped = bucket_deltas(
+                cur, base, {"fmt": fmt_names, "knowledge": know_names}
+            )
+            fmt_deltas, know_deltas = grouped["fmt"], grouped["knowledge"]
         dom_delta, gen_delta = _deltas(cfg, pt["id"])  # Stage-A proxies (cheap)
         know_delta = statistics.mean(know_deltas) if know_deltas else None
         degenerate = bool(coh.get("degenerate")) if coh else None
@@ -405,12 +431,12 @@ def phase_report(cfg: dict, points: list[dict]) -> None:
         #    forgetting (shortlist only, gated non-degenerate). None where unavailable so it
         #    sorts last; +inf = learned with no measurable forgetting (Pareto-best).
         proxy_score = (
-            _learning_per_forgetting(dom_delta, gen_delta)
+            learning_per_forgetting(dom_delta, gen_delta)
             if learned and gen_delta is not None
             else None
         )
         best_case_score = (
-            _learning_per_forgetting(dom_delta, -know_delta)
+            learning_per_forgetting(dom_delta, -know_delta)
             if learned and know_delta is not None and not degenerate
             else None
         )
@@ -458,7 +484,9 @@ def _load(path: Path) -> dict:
 
 def emit_serve_cmd(cfg: dict, points: list[dict]) -> None:
     max_rank = max(pt["lora_rank"] for pt in points)
-    modules = " ".join(f"{pt['id']}={point_dir(cfg, pt['id']) / 'adapter'}" for pt in points)
+    modules = " ".join(
+        f"{pt['id']}={point_dir(cfg, pt['id']) / 'adapter'}" for pt in points
+    )
     limit_clause = f" --limit {cfg['eval_limit']}" if cfg.get("eval_limit") else ""
     print(
         "\n[sweep:plan] amortized-eval server (one vLLM init for all points):\n"
@@ -476,7 +504,9 @@ def main() -> None:
     args = parse_args()
     cfg = yaml.safe_load(args.config.read_text())
     points = build_points(cfg)
-    print(f"[sweep] {len(points)} grid points (out_root={cfg.get('out_root', 'runs/exp0')})")
+    print(
+        f"[sweep] {len(points)} grid points (out_root={cfg.get('out_root', 'runs/exp0')})"
+    )
 
     if args.phase in ("plan", "all"):
         for pt in points:
