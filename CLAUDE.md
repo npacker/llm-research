@@ -39,6 +39,17 @@ The project env is **not** in the workspace — it lives at `/opt/venv` (baked i
 
 ABI-critical packages are hard `==` pinned and must stay coherent: **torch 2.11.0+cu130, torchvision 0.26.0, vllm 0.23.0** all target CUDA major 13. `torch`/`torchvision` come from the explicit PyTorch `cu130` index (`[tool.uv.sources]`), not PyPI. **Never `--upgrade` torch or vllm blindly** — they must move together and stay on CUDA 13. Convenience tools (jupyterlab, numpy, pandas, ruff, wandb, openai, …) and the eval/metrics stack (lm-eval, sentence-transformers, mauve-text, vendi-score, prdc, emoji, syllapy, …) are intentionally unpinned in `pyproject.toml` but frozen exactly by `uv.lock`. When adding eval/metrics deps, re-lock and confirm the torch/torchvision/vllm/transformers pins did not move (`grep -A1 -E '^name = "(torch|vllm|transformers)"' uv.lock`). `tokenizers` is deliberately not pinned (transformers caps it and the obvious version was never published — let uv resolve it).
 
+### Research existing packages before reimplementing (and before swapping)
+
+When a task could be solved by a library — or when proposing to replace custom code *with* a library — do the research **before** writing code or committing to a plan, and verify it rather than asserting from memory (see [[verify-dependency-claims]]):
+
+- **Check what's already a dependency first.** The eval/metrics stack is broad (lm-eval, sentence-transformers, mauve-text, vendi-score, prdc, sacrebleu, langdetect, datasets, peft, …). Prefer reusing an installed package over adding a new one; prefer stdlib over a new dependency for small, stable utilities.
+- **Verify the package is real and compatible before depending on it.** Resolve it in a throwaway manifest (`uv add --dry-run` / a scratch `uv.lock`) and confirm it doesn't move the ABI-critical pins (`grep -A1 -E '^name = "(torch|vllm|transformers)"' uv.lock`). Do **not** cite a PyPI package, version, or API from training data as fact — packages get abandoned, renamed, or never existed.
+- **Read the code you're proposing to replace.** A swap is only a win if it preserves behavior. Some custom code is small *and* load-bearing — it encodes project-specific semantics a general library won't: the `hf:<dataset>:<split>:<field>` spec in `corpus.py`, the LoRA base+adapter path in `validation.perplexity()`, EDT temperature, prefix-only prompts, the masked-CE perplexity. "Fewer lines" that silently drops a split argument, a LoRA path, or a gate's meaning is a regression, not a cleanup.
+- **Count the real cost.** A new dependency is not free: lock churn, ABI-coherence risk, import-time cost (scripts defer heavy imports to keep `--help` fast), and supply-chain surface. A correct 20-line stdlib helper usually beats a heavy dependency that does the same thing.
+
+The bar: reuse > stdlib > a *verified* new dependency > custom code. Reach for custom code when it's research-specific or when the library swap would change behavior.
+
 ## Common commands
 
 ```sh
